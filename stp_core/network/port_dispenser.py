@@ -25,7 +25,7 @@ class PortDispenser:
     def __init__(self, ip: str, filename: str=None, minPort=6000, maxPort=9999):
         self.ip = ip
         self.FILE = filename or os.path.join(tempfile.gettempdir(),
-                                             'plenum-portmutex.{}.txt'.format(ip))
+                                             'stp-portmutex.{}.txt'.format(ip))
         self.minPort = minPort
         self.maxPort = maxPort
         self.initFile()
