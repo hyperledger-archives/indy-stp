@@ -6,16 +6,15 @@ import sys
 import time
 from binascii import hexlify
 from collections import deque
-from typing import Dict, Mapping, Callable, Any, List, Tuple
+from typing import Dict, Mapping, Callable, Tuple
 from typing import Set
 
 import zmq
 import zmq.asyncio
 import zmq.auth
-from plenum.common.authenticator import MyAuthenticator
-from plenum.common.batched import Batched
+from stp_core.zmq.authenticator import MultiZapAuthenticator
 from plenum.common.log import getlogger
-from plenum.common.network_interface import NetworkInterface
+from stp_core.network.network_interface import NetworkInterface
 from plenum.common.txn import BATCH
 from plenum.common.types import OP_FIELD_NAME, f
 from raet.nacling import Signer, Verifier
@@ -24,7 +23,6 @@ from zmq.utils.monitor import recv_monitor_message
 
 from stp_core.ratchet import Ratchet
 from stp_core.types import HA
-from stp_core.zmq.z_util import moveKeyFilesToCorrectLocations
 from stp_core.zmq.util import createEncAndSigKeys, \
     moveKeyFilesToCorrectLocations
 
@@ -316,7 +314,7 @@ class ZStack(NetworkInterface):
             raise RuntimeError('Listener already setup')
         location = self.publicKeysDir if restricted else zmq.auth.CURVE_ALLOW_ANY
         # self.auth = AsyncioAuthenticator(self.ctx)
-        self.auth = MyAuthenticator(self.ctx)
+        self.auth = MultiZapAuthenticator(self.ctx)
         self.auth.start()
         self.auth.allow('0.0.0.0')
         self.auth.configure_curve(domain='*', location=location)
@@ -1039,58 +1037,3 @@ class KITZStack(SimpleZStack):
         if regName:
             return regName[0]
         return None
-
-
-class ClientZStack(SimpleZStack):
-    def __init__(self, stackParams: dict, msgHandler: Callable, seed=None):
-        SimpleZStack.__init__(self, stackParams, msgHandler, seed=seed,
-                              onlyListener=True)
-        self.connectedClients = set()
-
-    def serviceClientStack(self):
-        newClients = self.connecteds - self.connectedClients
-        self.connectedClients = self.connecteds
-        return newClients
-
-    def newClientsConnected(self, newClients):
-        raise NotImplementedError("{} must implement this method".format(self))
-
-    def transmitToClient(self, msg: Any, remoteName: str):
-        """
-        Transmit the specified message to the remote client specified by `remoteName`.
-
-        :param msg: a message
-        :param remoteName: the name of the remote
-        """
-        # At this time, nodes are not signing messages to clients, beyond what
-        # happens inherently with RAET
-        payload = self.prepForSending(msg)
-        try:
-            self.send(payload, remoteName)
-        except Exception as ex:
-            # TODO: This should not be an error since the client might not have
-            # sent the request to all nodes but only some nodes and other
-            # nodes might have got this request through PROPAGATE and thus
-            # might not have connection with the client.
-            logger.error("{} unable to send message {} to client {}; Exception: {}"
-                         .format(self, msg, remoteName, ex.__repr__()))
-
-    def transmitToClients(self, msg: Any, remoteNames: List[str]):
-        #TODO: Handle `remoteNames`
-        for nm in self.peersWithoutRemotes:
-            self.transmitToClient(msg, nm)
-
-
-class NodeZStack(Batched, KITZStack):
-    def __init__(self, stackParams: dict, msgHandler: Callable,
-                 registry: Dict[str, HA], seed=None, sighex: str=None):
-        Batched.__init__(self)
-        KITZStack.__init__(self, stackParams, msgHandler, registry=registry,
-                           seed=seed, sighex=sighex)
-
-    # TODO: Reconsider defaulting `reSetupAuth` to True.
-    def start(self, restricted=None, reSetupAuth=True):
-        KITZStack.start(self, restricted=restricted, reSetupAuth=reSetupAuth)
-        logger.info("{} listening for other nodes at {}:{}".
-                    format(self, *self.ha),
-                    extra={"tags": ["node-listening"]})

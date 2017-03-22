@@ -11,18 +11,22 @@ from zmq.auth.thread import _inherit_docstrings, ThreadAuthenticator, \
 # Copying code from zqm classes since no way to inject these dependencies
 
 
-class MyAuthenticator(Authenticator):
+class MultiZapAuthenticator(Authenticator):
+    """
+    `Authenticator` supports only one ZAP socket in a single process, this lets
+     you have multiple ZAP sockets
+    """
     count = 0
 
     def __init__(self, context=None, encoding='utf-8', log=None):
-        MyAuthenticator.count += 1
+        MultiZapAuthenticator.count += 1
         super().__init__(context=context, encoding=encoding, log=log)
 
     def start(self):
         """Create and bind the ZAP socket"""
         self.zap_socket = self.context.socket(zmq.REP)
         self.zap_socket.linger = 1
-        zapLoc = 'inproc://zeromq.zap.{}'.format(MyAuthenticator.count)
+        zapLoc = 'inproc://zeromq.zap.{}'.format(MultiZapAuthenticator.count)
         self.zap_socket.bind(zapLoc)
         self.log.debug('Starting ZAP at {}'.format(zapLoc))
 
@@ -35,15 +39,15 @@ class MyAuthenticator(Authenticator):
 
 
 @_inherit_docstrings
-class MyThreadAuthenticator(ThreadAuthenticator):
+class ThreadMultiZapAuthenticator(ThreadAuthenticator):
     def start(self):
         """Start the authentication thread"""
         # create a socket to communicate with auth thread.
         self.pipe = self.context.socket(zmq.PAIR)
         self.pipe.linger = 1
         self.pipe.bind(self.pipe_endpoint)
-        authenticator = MyAuthenticator(self.context, encoding=self.encoding,
-                                        log=self.log)
+        authenticator = MultiZapAuthenticator(self.context, encoding=self.encoding,
+                                              log=self.log)
         self.thread = AuthenticationThread(self.context, self.pipe_endpoint,
                                            encoding=self.encoding, log=self.log,
                                            authenticator=authenticator)
@@ -56,7 +60,7 @@ class MyThreadAuthenticator(ThreadAuthenticator):
                 raise RuntimeError("Authenticator thread failed to start")
 
 
-class AsyncioAuthenticator(MyAuthenticator):
+class AsyncioAuthenticator(MultiZapAuthenticator):
     """ZAP authentication for use in the asyncio IO loop"""
 
     def __init__(self, context=None, loop=None):

@@ -1,26 +1,25 @@
 import sys
 import time
 from collections import Callable
-from typing import Any, Set, Optional, List
+from typing import Any, Set, Optional
 from typing import Dict
 from typing import Tuple
 
-from plenum.common.network_interface import NetworkInterface
+from plenum.common.config_util import getConfig
+from plenum.common.error import error
+from plenum.common.log import getlogger
 from raet.raeting import AutoMode, TrnsKind
 from raet.road.estating import RemoteEstate
 from raet.road.keeping import RoadKeep
 from raet.road.stacking import RoadStack
 from raet.road.transacting import Joiner, Allower, Messenger
+
 from stp_core.crypto.util import ed25519SkToCurve25519, \
     getEd25519AndCurve25519Keys
+from stp_core.network.network_interface import NetworkInterface
 from stp_core.network.util import checkPortAvailable, distributedConnectionMap
 from stp_core.ratchet import Ratchet
 from stp_core.types import HA
-
-from plenum.common.batched import Batched
-from plenum.common.config_util import getConfig
-from plenum.common.error import error
-from plenum.common.log import getlogger
 
 logger = getlogger()
 
@@ -593,60 +592,4 @@ class KITRStack(SimpleRStack):
             return find[0]
         return remote.name
 
-
-class ClientRStack(SimpleRStack):
-    def __init__(self, stackParams: dict, msgHandler: Callable):
-        # The client stack needs to be mutable unless we explicitly decide
-        # not to
-        stackParams["mutable"] = stackParams.get("mutable", True)
-        SimpleRStack.__init__(self, stackParams, msgHandler)
-        self.connectedClients = set()
-
-    def serviceClientStack(self):
-        newClients = self.connecteds - self.connectedClients
-        self.connectedClients = self.connecteds
-        return newClients
-
-    def newClientsConnected(self, newClients):
-        raise NotImplementedError("{} must implement this method".format(self))
-
-    def transmitToClient(self, msg: Any, remoteName: str):
-        """
-        Transmit the specified message to the remote client specified by `remoteName`.
-
-        :param msg: a message
-        :param remoteName: the name of the remote
-        """
-        # At this time, nodes are not signing messages to clients, beyond what
-        # happens inherently with RAET
-        payload = self.prepForSending(msg)
-        try:
-            self.send(payload, remoteName)
-        except Exception as ex:
-            # TODO: This should not be an error since the client might not have
-            # sent the request to all nodes but only some nodes and other
-            # nodes might have got this request through PROPAGATE and thus
-            # might not have connection with the client.
-            logger.error("{} unable to send message {} to client {}; Exception: {}"
-                         .format(self, msg, remoteName, ex.__repr__()))
-
-    def transmitToClients(self, msg: Any, remoteNames: List[str]):
-        for nm in remoteNames:
-            self.transmitToClient(msg, nm)
-
-
-class NodeStack(Batched, KITRStack):
-    def __init__(self, stackParams: dict, msgHandler: Callable,
-                 registry: Dict[str, HA], sighex: str=None):
-        Batched.__init__(self)
-        # TODO: Just to get around the restriction of port numbers changed on
-        # Azure. Remove this soon to relax port numbers only but not IP.
-        stackParams["mutable"] = stackParams.get("mutable", True)
-        KITRStack.__init__(self, stackParams, msgHandler, registry, sighex)
-
-    def start(self):
-        KITRStack.start(self)
-        logger.info("{} listening for other nodes at {}:{}".
-                    format(self, *self.ha),
-                    extra={"tags": ["node-listening"]})
 
