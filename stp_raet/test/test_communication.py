@@ -4,7 +4,7 @@ from raet.raeting import AutoMode, Acceptance
 from raet.road.estating import RemoteEstate
 from raet.road.stacking import RoadStack
 
-from raett.test.helper import handshake, sendMsgs, cleanup, getRemote
+from stp_raet.test.helper import handshake, sendMsgs, cleanup, getRemote
 from stp_core.common.log import getlogger
 from stp_core.network.port_dispenser import genHa
 

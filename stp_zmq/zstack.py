@@ -10,10 +10,10 @@ from collections import deque
 from typing import Dict, Mapping, Callable, Tuple
 from typing import Set
 
-# import zmqt.asyncio
+# import stp_zmq.asyncio
 import zmq.auth
 from stp_core.crypto.nacl_wrappers import Signer, Verifier
-from zmqt.authenticator import MultiZapAuthenticator
+from stp_zmq.authenticator import MultiZapAuthenticator
 from zmq.utils import z85
 from zmq.utils.monitor import recv_monitor_message
 
@@ -22,7 +22,7 @@ from stp_core.common.log import getlogger
 from stp_core.network.network_interface import NetworkInterface
 from stp_core.ratchet import Ratchet
 from stp_core.types import HA
-from zmqt.util import createEncAndSigKeys, \
+from stp_zmq.util import createEncAndSigKeys, \
     moveKeyFilesToCorrectLocations
 
 logger = getlogger()

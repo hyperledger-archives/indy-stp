@@ -1,9 +1,9 @@
 from copy import copy
 
 from stp_core.loop.eventually import eventually
-from zmqt.test.helper import genKeys, Printer, prepStacks, \
+from stp_zmq.test.helper import genKeys, Printer, prepStacks, \
     checkStacksConnected
-from zmqt.zstack import KITZStack
+from stp_zmq.zstack import KITZStack
 
 
 def testKitZStacksConnected(registry, tdir, looper):

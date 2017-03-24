@@ -5,11 +5,11 @@ from typing import Any, Set, Optional
 from typing import Dict
 from typing import Tuple
 
-from raett.raeting import AutoMode, TrnsKind
-from raett.road.estating import RemoteEstate
-from raett.road.keeping import RoadKeep
-from raett.road.stacking import RoadStack
-from raett.road.transacting import Joiner, Allower, Messenger
+from stp_raet.raeting import AutoMode, TrnsKind
+from stp_raet.road.estating import RemoteEstate
+from stp_raet.road.keeping import RoadKeep
+from stp_raet.road.stacking import RoadStack
+from stp_raet.road.transacting import Joiner, Allower, Messenger
 from stp_core.common.error import error
 from stp_core.common.log import getlogger
 
