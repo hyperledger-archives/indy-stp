@@ -2,8 +2,8 @@ import json
 import os
 from collections import OrderedDict
 
-from raet.nacling import Signer, Privateer
-from raet.road.keeping import RoadKeep
+from raett.nacling import Signer, Privateer
+from raett.road.keeping import RoadKeep
 
 from stp_core.crypto.util import ed25519SkToCurve25519, ed25519PkToCurve25519
 

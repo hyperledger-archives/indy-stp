@@ -267,9 +267,8 @@ class Looper:
         start = time.perf_counter()
         await self.runFut
         self.stopall()
-        from plenum.common.util import getOpenConnections
-        logger.info("Looper shut down in {:.3f} seconds. {} open conns".
-                    format(time.perf_counter() - start, len(getOpenConnections())),
+        logger.info("Looper shut down in {:.3f} seconds.".
+                    format(time.perf_counter() - start),
                     extra={"cli": False})
 
     def __enter__(self):

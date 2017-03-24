@@ -1,12 +1,11 @@
 import json
 
 import zmq
-from stp_core.test.zmq.helper import genKeys, SMotor
-from stp_core.zmq.zstack import SimpleZStack
-from raet.raeting import AutoMode
 from stp_core.crypto.util import randomSeed
 from stp_core.network.port_dispenser import genHa
 from stp_core.types import HA
+from zmqt.test.helper import genKeys, SMotor
+from zmqt.zstack import SimpleZStack
 
 
 def testSimpleZStacksMsgs(tdir, looper):
@@ -40,7 +39,7 @@ def testSimpleZStacksMsgs(tdir, looper):
     stackParams = {
         "name": names[0],
         "ha": HA("0.0.0.0", aha[1]),
-        "auto": AutoMode.always,
+        "auto": 2,
         "basedirpath": tdir
     }
     alpha = SimpleZStack(stackParams, aHandler, aseed, False)
@@ -48,7 +47,7 @@ def testSimpleZStacksMsgs(tdir, looper):
     stackParams = {
         "name": names[1],
         "ha": HA("0.0.0.0", bha[1]),
-        "auto": AutoMode.always,
+        "auto": 2,
         "basedirpath": tdir
     }
     beta = SimpleZStack(stackParams, bHandler, bseed, True)

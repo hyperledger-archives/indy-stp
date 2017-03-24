@@ -1,9 +1,10 @@
 import os
 from distutils.dir_util import copy_tree
 
+from zmqt.zstack import ZStack, KITZStack
+
 from stp_core.loop.motor import Motor
-from stp_core.zmq.util import generate_certificates
-from stp_core.zmq.zstack import ZStack, KITZStack
+from zmqt.util import generate_certificates
 
 
 class Printer:

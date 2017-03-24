@@ -1,14 +1,14 @@
 from binascii import hexlify
 
 import pytest
-from raet.nacling import Signer
 from raet.raeting import AutoMode, Acceptance
 from raet.road.estating import RemoteEstate
 from raet.road.stacking import RoadStack
 
+from raett.test.helper import handshake, sendMsgs, cleanup
+from stp_core.crypto.nacl_wrappers import Signer
 from stp_core.crypto.util import ed25519SkToCurve25519, ed25519PkToCurve25519
 from stp_core.network.port_dispenser import genHa
-from stp_core.test.raet.helper import handshake, sendMsgs, cleanup
 
 
 @pytest.fixture(scope="module")

@@ -1,0 +1,1 @@
+from stp_core.test.conftest import *

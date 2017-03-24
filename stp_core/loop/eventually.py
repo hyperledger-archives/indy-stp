@@ -5,7 +5,7 @@ from asyncio.coroutines import CoroWrapper
 from inspect import isawaitable
 from typing import Callable, TypeVar, Optional, Iterable
 
-from plenum.common.log import getlogger
+from stp_core.common.log import getlogger
 from stp_core.ratchet import Ratchet
 
 # TODO: move it to plenum-util repo

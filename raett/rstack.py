@@ -5,11 +5,11 @@ from typing import Any, Set, Optional
 from typing import Dict
 from typing import Tuple
 
-from raet.raeting import AutoMode, TrnsKind
-from raet.road.estating import RemoteEstate
-from raet.road.keeping import RoadKeep
-from raet.road.stacking import RoadStack
-from raet.road.transacting import Joiner, Allower, Messenger
+from raett.raeting import AutoMode, TrnsKind
+from raett.road.estating import RemoteEstate
+from raett.road.keeping import RoadKeep
+from raett.road.stacking import RoadStack
+from raett.road.transacting import Joiner, Allower, Messenger
 from stp_core.common.error import error
 from stp_core.common.log import getlogger
 
@@ -196,7 +196,7 @@ class RStack(NetworkInterface):
 
     def updateStamp(self, age=None):
         """
-        Change the timestamp of this stack's raet store.
+        Change the timestamp of this stack's test store.
 
         :param age: the timestamp will be set to this value
         """

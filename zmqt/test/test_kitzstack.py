@@ -1,8 +1,9 @@
 from copy import copy
 
 from stp_core.loop.eventually import eventually
-from stp_core.test.zmq.helper import genKeys, Printer, prepStacks, checkStacksConnected
-from stp_core.zmq.zstack import KITZStack
+from zmqt.test.helper import genKeys, Printer, prepStacks, \
+    checkStacksConnected
+from zmqt.zstack import KITZStack
 
 
 def testKitZStacksConnected(registry, tdir, looper):
@@ -17,5 +18,6 @@ def testKitZStacksConnected(registry, tdir, looper):
         stacks.append(stack)
 
     prepStacks(looper, *stacks, connect=False)
-    looper.run(eventually(checkStacksConnected, stacks, retryWait=1, timeout=10))
+    looper.run(eventually(checkStacksConnected, stacks, retryWait=1,
+                          timeout=10))
 

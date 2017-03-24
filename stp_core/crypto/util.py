@@ -4,7 +4,7 @@ import string
 from binascii import unhexlify, hexlify
 
 from libnacl import crypto_box_SECRETKEYBYTES, nacl, crypto_box_PUBLICKEYBYTES
-from raet.nacling import Signer
+from stp_core.crypto.nacl_wrappers import Signer
 
 # TODO: move it to crypto repo
 

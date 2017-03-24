@@ -10,19 +10,19 @@ from collections import deque
 from typing import Dict, Mapping, Callable, Tuple
 from typing import Set
 
-import zmq
-import zmq.asyncio
+# import zmqt.asyncio
 import zmq.auth
-from stp_core.common.log import getlogger
-from stp_core.zmq.authenticator import MultiZapAuthenticator
-from stp_core.network.network_interface import NetworkInterface
-from raet.nacling import Signer, Verifier
+from stp_core.crypto.nacl_wrappers import Signer, Verifier
+from zmqt.authenticator import MultiZapAuthenticator
 from zmq.utils import z85
 from zmq.utils.monitor import recv_monitor_message
 
+import zmq
+from stp_core.common.log import getlogger
+from stp_core.network.network_interface import NetworkInterface
 from stp_core.ratchet import Ratchet
 from stp_core.types import HA
-from stp_core.zmq.util import createEncAndSigKeys, \
+from zmqt.util import createEncAndSigKeys, \
     moveKeyFilesToCorrectLocations
 
 logger = getlogger()
@@ -38,7 +38,7 @@ LINGER_TIME = 20
 
 class Remote:
     def __init__(self, name, ha, verKey, publicKey):
-        # TODO, remove *args, **kwargs after removing raet
+        # TODO, remove *args, **kwargs after removing test
 
         # Every remote has a unique name per stack, the name can be the
         # public key of the other end
@@ -68,13 +68,13 @@ class Remote:
         sock.curve_secretkey = localSecKey
         sock.curve_serverkey = self.publicKey
         sock.identity = localPubKey
-        # sock.setsockopt(zmq.PROBE_ROUTER, 1)
+        # sock.setsockopt(test.PROBE_ROUTER, 1)
 
         # monitorLoc = 'inproc://monitor.{}{}'.format(self.uid, randomString(10))
-        # monitorSock = context.socket(zmq.PAIR)
+        # monitorSock = context.socket(test.PAIR)
         # monitorSock.connect(monitorLoc)
         # monitorSock.linger = 0
-        # sock.monitor(monitorLoc, zmq.EVENT_ALL)
+        # sock.monitor(monitorLoc, test.EVENT_ALL)
 
         addr = 'tcp://{}:{}'.format(*self.ha)
         sock.connect(addr)
@@ -203,7 +203,7 @@ class ZStack(NetworkInterface):
 
     def __init__(self, name, ha, basedirpath, msgHandler, restricted=True,
                  seed=None, onlyListener=False):
-        # TODO, remove *args, **kwargs after removing raet
+        # TODO, remove *args, **kwargs after removing test
         self.name = name
         self.ha = ha
         self.basedirpath = basedirpath
@@ -224,7 +224,7 @@ class ZStack(NetworkInterface):
         self.setupOwnKeysIfNeeded()
         self.setupSigning()
 
-        # self.poller = zmq.asyncio.Poller()
+        # self.poller = test.asyncio.Poller()
 
         self.restricted = restricted
 
@@ -359,7 +359,7 @@ class ZStack(NetworkInterface):
         self.verifiers[verkey] = Verifier(z85.decode(verkey))
 
     def start(self, restricted=None, reSetupAuth=True):
-        # self.ctx = zmq.asyncio.Context.instance()
+        # self.ctx = test.asyncio.Context.instance()
         self.ctx = zmq.Context.instance()
         self.ctx.MAX_SOCKETS = self.MAX_SOCKETS
         restricted = self.restricted if restricted is None else restricted
@@ -386,7 +386,7 @@ class ZStack(NetworkInterface):
         # noinspection PyUnresolvedReferences
         self.listener = self.ctx.socket(zmq.ROUTER)
         # noinspection PyUnresolvedReferences
-        # self.poller.register(self.listener, zmq.POLLIN)
+        # self.poller.register(self.listener, test.POLLIN)
         public, secret = self.selfEncKeys
         self.listener.curve_secretkey = secret
         self.listener.curve_publickey = public
@@ -434,7 +434,7 @@ class ZStack(NetworkInterface):
 
     @property
     def isKeySharing(self):
-        # TODO: Change name after removing raet
+        # TODO: Change name after removing test
         return not self.isRestricted
 
 
@@ -505,7 +505,7 @@ class ZStack(NetworkInterface):
         while True:
             try:
                 # ident, msg = await self.listener.recv_multipart(
-                #     flags=zmq.NOBLOCK)
+                #     flags=test.NOBLOCK)
                 ident, msg = self.listener.recv_multipart(flags=zmq.NOBLOCK)
                 if not msg:
                     # Router probing sends empty message on connection
@@ -529,8 +529,8 @@ class ZStack(NetworkInterface):
             i = 0
             while True:
                 try:
-                    # ident, msg = await sock.recv(flags=zmq.NOBLOCK)
-                    # msg = sock.recv(flags=zmq.NOBLOCK)
+                    # ident, msg = await sock.recv(flags=test.NOBLOCK)
+                    # msg = sock.recv(flags=test.NOBLOCK)
                     msg, = sock.recv_multipart(flags=zmq.NOBLOCK)
                     if not msg:
                         # Router probing sends empty message on connection
@@ -798,7 +798,7 @@ class ZStack(NetworkInterface):
     def sigKey(self):
         return self.loadSecKeyFromDisk(self.sigKeyDir, self.name)
 
-    # TODO: Change name to sighex after removing raet
+    # TODO: Change name to sighex after removing test
     @property
     def keyhex(self):
         return hexlify(z85.decode(self.sigKey))
@@ -922,7 +922,7 @@ class DummyKeep:
 class SimpleZStack(ZStack):
     def __init__(self, stackParams: Dict, msgHandler: Callable, seed=None,
                  onlyListener=False, sighex: str=None):
-        # TODO: sighex is unused as of now, remove once raet is removed or
+        # TODO: sighex is unused as of now, remove once test is removed or
         # maybe use sighex to generate all keys, DECISION DEFERRED
 
         self.stackParams = stackParams
@@ -934,7 +934,7 @@ class SimpleZStack(ZStack):
         ha = stackParams['ha']
         basedirpath = stackParams['basedirpath']
 
-        # TODO: Change after removing raet
+        # TODO: Change after removing test
         auto = stackParams['auto']
         restricted = True if auto == 0 else False
 

@@ -6,78 +6,12 @@ import sys
 from ioflo.base.consoling import getConsole, Console
 from stp_core.common.logging.TimeAndSizeRotatingFileHandler import TimeAndSizeRotatingFileHandler
 from stp_core.common.util import Singleton
+from stp_core.util import getConfig
 
 TRACE_LOG_LEVEL = 5
 DISPLAY_LOG_LEVEL = 25
 
 # TODO: move it to plenum-util repo
-
-class CustomAdapter(logging.LoggerAdapter):
-    def trace(self, msg, *args, **kwargs):
-        self.log(TRACE_LOG_LEVEL, msg, *args, **kwargs)
-
-    def display(self, msg, *args, **kwargs):
-        self.log(DISPLAY_LOG_LEVEL, msg, *args, **kwargs)
-
-
-class CallbackHandler(logging.Handler):
-    def __init__(self, typestr, default_tags, callback, override_tags):
-        """
-        Initialize the handler.
-        """
-        super().__init__()
-        self.callback = callback
-        self.tags = default_tags
-        self.update_tags(override_tags or {})
-        self.typestr = typestr
-
-    def update_tags(self, override_tags):
-        self.tags.update(override_tags)
-
-    def emit(self, record):
-        """
-        Passes the log record back to the CLI for rendering
-        """
-        should_cb = None
-        attr_val = None
-        if hasattr(record, self.typestr):
-            attr_val = getattr(record, self.typestr)
-            should_cb = bool(attr_val)
-        if should_cb is None and record.levelno >= logging.INFO:
-            should_cb = True
-        if hasattr(record, 'tags'):
-            for t in record.tags:
-                if t in self.tags:
-                    if self.tags[t]:
-                        should_cb = True
-                        continue
-                    else:
-                        should_cb = False
-                        break
-        if should_cb:
-            self.callback(record, attr_val)
-
-
-class CliHandler(CallbackHandler):
-    def __init__(self, callback, override_tags=None):
-        default_tags = {
-            "add_replica": True
-        }
-        super().__init__(typestr="cli",
-                         default_tags=default_tags,
-                         callback=callback,
-                         override_tags=override_tags)
-
-
-class DemoHandler(CallbackHandler):
-    def __init__(self, callback, override_tags=None):
-        default_tags = {
-            "add_replica": True
-        }
-        super().__init__(typestr="demo",
-                         default_tags=default_tags,
-                         callback=callback,
-                         override_tags=override_tags)
 
 
 def getlogger(name: object = None) -> object:
@@ -100,12 +34,10 @@ class TestingHandler(logging.Handler):
 
 
 class Logger(metaclass=Singleton):
-    def __init__(self):
-        from plenum.common.config_util import getConfig
+    def __init__(self, config=None):
         # TODO: This should take directory
-        self._config = getConfig()
+        self._config = config or getConfig()
         self._addTraceToLogging()
-        self._addDisplayToLogging()
 
         self._handlers = {}
         self._format = logging.Formatter(fmt=self._config.logFormat,
@@ -157,12 +89,6 @@ class Logger(metaclass=Singleton):
         new = logging.StreamHandler(sys.stdout)
         self._setHandler('std', new)
 
-    def enableCliLogging(self, callback, override_tags=None):
-        h = CliHandler(callback, override_tags)
-        self._setHandler('cli', h)
-        # assumption is there's never a need to have std logging when in CLI
-        self._clearHandler('std')
-
     def enableFileLogging(self, filename):
         d = os.path.dirname(filename)
         if not os.path.exists(d):
@@ -200,16 +126,6 @@ class Logger(metaclass=Singleton):
                 self._log(TRACE_LOG_LEVEL, message, args, **kwargs)
 
         logging.Logger.trace = trace
-
-    @staticmethod
-    def _addDisplayToLogging():
-        logging.addLevelName(DISPLAY_LOG_LEVEL, "DISPLAY")
-
-        def display(self, message, *args, **kwargs):
-            if self.isEnabledFor(DISPLAY_LOG_LEVEL):
-                self._log(DISPLAY_LOG_LEVEL, message, args, **kwargs)
-
-        logging.Logger.display = display
 
 
 def getRAETLogLevelFromConfig(paramName, defaultValue, config):

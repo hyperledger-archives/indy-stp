@@ -1,15 +1,14 @@
-import logging
 from ioflo.base.consoling import getConsole
-from raet.nacling import Privateer
+from stp_core.crypto.nacl_wrappers import Signer as NaclSigner, Privateer
 from raet.raeting import AutoMode, Acceptance
 from raet.road.estating import RemoteEstate
 from raet.road.stacking import RoadStack
-from raet.nacling import Signer as NaclSigner
 
+from raett.test.helper import handshake, sendMsgs, cleanup, getRemote
+from stp_core.common.log import getlogger
 from stp_core.network.port_dispenser import genHa
-from stp_core.test.raet.helper import handshake, sendMsgs, cleanup, getRemote
 
-logger = logging.getLogger()
+logger = getlogger()
 
 
 def testPromiscuousConnection(tdir):

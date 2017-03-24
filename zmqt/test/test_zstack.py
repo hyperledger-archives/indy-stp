@@ -1,10 +1,8 @@
-from stp_core.zmq.zstack import ZStack
 from stp_core.crypto.util import randomSeed
+from stp_core.loop.eventually import eventually
 from stp_core.network.port_dispenser import genHa
-
-from plenum.common.eventually import eventually
-from plenum.test.zstack_tests.helper import Printer, genKeys, chkPrinted, \
-    prepStacks
+from zmqt.test.helper import genKeys, Printer, prepStacks, chkPrinted
+from zmqt.zstack import ZStack
 
 
 def testRestricted2ZStackCommunication(tdir, looper):

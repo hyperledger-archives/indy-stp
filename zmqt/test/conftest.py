@@ -1,7 +1,7 @@
 import asyncio
 
 import pytest
-import zmq.asyncio
+# import zmqt.asyncio
 from stp_core.common.temp_file_util import SafeTemporaryDirectory
 from stp_core.loop.looper import Looper
 
@@ -18,18 +18,16 @@ def registry():
     }
 
 
-@pytest.fixture()
-def loop():
-    loop = zmq.asyncio.ZMQEventLoop()
-    loop.set_debug(True)
+# @pytest.fixture()
+# def loop():
+#     loop = zmqt.asyncio.ZMQEventLoop()
+#     loop.set_debug(True)
 
 
 @pytest.yield_fixture()
-def tdirAndLooper(loop):
-    asyncio.set_event_loop(loop)
-
+def tdirAndLooper():
     with SafeTemporaryDirectory() as td:
-        with Looper(loop=loop, debug=True) as looper:
+        with Looper(debug=True) as looper:
             yield td, looper
 
 

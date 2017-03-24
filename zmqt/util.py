@@ -124,7 +124,7 @@ def initStackLocalKeys(name, baseDir, sigseed, override=False):
                                                                          name,
                                                                          seed=sigseed)
 
-    from stp_core.zmq.zstack import ZStack
+    from zmq.zstack import ZStack
     homeDir = ZStack.homeDirPath(baseDir, name)
     verifDirPath = ZStack.verifDirPath(homeDir)
     sigDirPath = ZStack.sigDirPath(homeDir)
@@ -144,7 +144,7 @@ def initStackLocalKeys(name, baseDir, sigseed, override=False):
 def initRemoteKeys(name, remoteName, baseDir, verkey, override=False):
     # TODO: Implement override functionality
 
-    from stp_core.zmq.zstack import ZStack
+    from zmqt.zstack import ZStack
     homeDir = ZStack.homeDirPath(baseDir, name)
     verifDirPath = ZStack.verifDirPath(homeDir)
     pubDirPath = ZStack.publicDirPath(homeDir)
