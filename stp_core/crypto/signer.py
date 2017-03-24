@@ -3,6 +3,7 @@ from typing import Dict
 
 from stp_core.types import Identifier
 
+# TODO: move it to crypto repo
 
 class Signer:
     """

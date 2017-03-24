@@ -4,6 +4,7 @@ import os
 import shutil
 import sys
 import time
+from abc import abstractmethod
 from binascii import hexlify
 from collections import deque
 from typing import Dict, Mapping, Callable, Tuple
@@ -12,11 +13,9 @@ from typing import Set
 import zmq
 import zmq.asyncio
 import zmq.auth
+from stp_core.common.log import getlogger
 from stp_core.zmq.authenticator import MultiZapAuthenticator
-from plenum.common.log import getlogger
 from stp_core.network.network_interface import NetworkInterface
-from plenum.common.txn import BATCH
-from plenum.common.types import OP_FIELD_NAME, f
 from raet.nacling import Signer, Verifier
 from zmq.utils import z85
 from zmq.utils.monitor import recv_monitor_message
@@ -38,8 +37,7 @@ LINGER_TIME = 20
 
 
 class Remote:
-    def __init__(self, name, ha, verKey, publicKey,
-                 *args, **kwargs):
+    def __init__(self, name, ha, verKey, publicKey):
         # TODO, remove *args, **kwargs after removing raet
 
         # Every remote has a unique name per stack, the name can be the
@@ -204,7 +202,7 @@ class ZStack(NetworkInterface):
     messageTimeout = 3
 
     def __init__(self, name, ha, basedirpath, msgHandler, restricted=True,
-                 seed=None, onlyListener=False, *args, **kwargs):
+                 seed=None, onlyListener=False):
         # TODO, remove *args, **kwargs after removing raet
         self.name = name
         self.ha = ha
@@ -235,7 +233,7 @@ class ZStack(NetworkInterface):
         self.auth = None
 
         # Each remote is identified uniquely by the name
-        self.remotes = {}  # type: Dict[str, Remote]
+        self._remotes = {}  # type: Dict[str, Remote]
 
         self.remotesByKeys = {}
 
@@ -247,7 +245,33 @@ class ZStack(NetworkInterface):
         self._conns = set()  # type: Set[str]
 
         self.rxMsgs = deque()
-        self.created = time.perf_counter()
+        self._created = time.perf_counter()
+
+    @property
+    def remotes(self):
+        return self._remotes
+
+    @property
+    def created(self):
+        return self._created
+
+    @staticmethod
+    def isRemoteConnected(r) -> bool:
+        return r.isConnected
+
+    def removeRemote(self, remote: Remote, clear=True):
+        """
+        Currently not using clear
+        """
+        name = remote.name
+        pkey = remote.publicKey
+        vkey = remote.verKey
+        if name in self.remotes:
+            self.remotes.pop(name)
+            self.remotesByKeys.pop(pkey, None)
+            self.verifiers.pop(vkey, None)
+        else:
+            logger.warn('No remote named {} present')
 
     @staticmethod
     def keyDirNames():
@@ -382,7 +406,7 @@ class ZStack(NetworkInterface):
             r.disconnect()
             self.remotesByKeys.pop(r.publicKey, None)
 
-        self.remotes = {}
+        self._remotes = {}
         if self.remotesByKeys:
             logger.warn('{} found remotes that were only in remotesByKeys and '
                         'not in remotes. This is suspicious')
@@ -413,14 +437,6 @@ class ZStack(NetworkInterface):
         # TODO: Change name after removing raet
         return not self.isRestricted
 
-    @staticmethod
-    def isRemoteConnected(r: Remote) -> bool:
-        """
-        A node is considered to be connected if it is joined, allowed and alived.
-
-        :param r: the remote to check
-        """
-        return r.isConnected
 
     def isConnectedTo(self, name: str = None, ha: Tuple = None):
         if self.onlyListener:
@@ -529,59 +545,55 @@ class ZStack(NetworkInterface):
 
         return len(self.rxMsgs)
 
+
+
     def processReceived(self, limit):
 
-        def handlePingPong(msg, frm, ident):
-            if msg in (self.pingMessage, self.pongMessage):
-                if msg == self.pingMessage:
-                    logger.trace('{} got ping from {}'.format(self, frm))
-                    self.send(self.pongMessage, frm)
-                    logger.trace('{} sent pong to {}'.format(self, frm))
-                if msg == self.pongMessage:
-                    if ident in self.remotesByKeys:
-                        self.remotesByKeys[ident].isConnected = True
-                    logger.trace('{} got pong from {}'.format(self, frm))
-                return True
-            return False
+        if limit <= 0:
+            return 0
 
-        if limit > 0:
-            for x in range(limit):
+        for x in range(limit):
+            try:
+                msg, ident = self.rxMsgs.popleft()
+
+                frm = self.remotesByKeys[ident].name \
+                    if ident in self.remotesByKeys else ident
+
+                r = self.handlePingPong(msg, frm, ident)
+                if r:
+                    continue
+
                 try:
-                    msg, ident = self.rxMsgs.popleft()
+                    msg = json.loads(msg)
+                except Exception as e:
+                    logger.error('Error {} while converting message {} '
+                                 'to JSON from {}'.format(e, msg, ident))
+                    continue
 
-                    frm = self.remotesByKeys[ident].name \
-                        if ident in self.remotesByKeys else ident
-
-                    r = handlePingPong(msg, frm, ident)
-                    if r:
-                        continue
-
-                    try:
-                        msg = json.loads(msg)
-                    except Exception as e:
-                        logger.error('Error {} while converting message {} '
-                                     'to JSON from {}'.format(e, msg, ident))
-                        continue
-
-                    # TODO: Refactor, this should be moved to `Batched`
-                    if OP_FIELD_NAME in msg and msg[OP_FIELD_NAME] == BATCH:
-                        if f.MSGS.nm in msg and isinstance(msg[f.MSGS.nm], list):
-                            # Removing ping and pong messages from Batch
-                            relevantMsgs = []
-                            for m in msg[f.MSGS.nm]:
-                                r = handlePingPong(m, frm, ident)
-                                if not r:
-                                    relevantMsgs.append(m)
-
-                            if not relevantMsgs:
-                                continue
-                            msg[f.MSGS.nm] = relevantMsgs
-
+                msg = self.doProcessReceived(msg, frm, ident)
+                if msg:
                     self.msgHandler((msg, frm))
-                except IndexError:
-                    break
-            return x + 1
-        return 0
+            except IndexError:
+                break
+        return x + 1
+
+    def handlePingPong(self, msg, frm, ident):
+        if msg in (self.pingMessage, self.pongMessage):
+            if msg == self.pingMessage:
+                logger.trace('{} got ping from {}'.format(self, frm))
+                self.send(self.pongMessage, frm)
+                logger.trace('{} sent pong to {}'.format(self, frm))
+            if msg == self.pongMessage:
+                if ident in self.remotesByKeys:
+                    self.remotesByKeys[ident].isConnected = True
+                logger.trace('{} got pong from {}'.format(self, frm))
+            return True
+        return False
+
+    @abstractmethod
+    def doProcessReceived(self, msg, frm, ident):
+        return msg
+
 
     def connect(self, name, ha=None, verKey=None, publicKey=None):
         """
@@ -649,19 +661,6 @@ class ZStack(NetworkInterface):
                          format(self, name, ha))
         return remote
 
-    def removeRemote(self, remote: Remote, clear=True):
-        """
-        Currently not using clear
-        """
-        name = remote.name
-        pkey = remote.publicKey
-        vkey = remote.verKey
-        if name in self.remotes:
-            self.remotes.pop(name)
-            self.remotesByKeys.pop(pkey, None)
-            self.verifiers.pop(vkey, None)
-        else:
-            logger.warn('No remote named {} present')
 
     def sendPing(self, remote):
         r = self.send(self.pingMessage, remote.name)

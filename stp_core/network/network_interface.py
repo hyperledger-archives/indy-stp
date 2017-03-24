@@ -1,20 +1,55 @@
-from abc import abstractmethod
-from typing import Set, Tuple, Any, Union, Dict
-
 import time
-from raet.nacling import Signer
+from abc import abstractmethod
+from typing import Set
 
-from plenum.common.log import getlogger
-from plenum.common.request import Request
-from plenum.common.types import TaggedTupleBase
-
-from stp_core.network.exceptions import RemoteNotFound
+from stp_core.common.log import getlogger
+from stp_core.network.exceptions import RemoteNotFound, DuplicateRemotes
+from stp_core.types import HA
 
 logger = getlogger()
 
 
 class NetworkInterface:
     localips = ['127.0.0.1', '0.0.0.0']
+
+    @property
+    @abstractmethod
+    def remotes(self):
+        """
+        Return all remote nodes (both connected and not)
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def created(self):
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def isRemoteConnected(r) -> bool:
+        """
+        A node is considered to be connected if it is joined, allowed and alived.
+
+        :param r: the remote to check
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def removeRemote(self, r):
+        raise NotImplementedError
+
+    @abstractmethod
+    def transmit(self, msg, uid, timeout=None):
+        raise NotImplementedError
+
+    @abstractmethod
+    def start(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def stop(self):
+        raise NotImplementedError
 
     @property
     def age(self):
@@ -27,100 +62,15 @@ class NetworkInterface:
     @property
     def connecteds(self) -> Set[str]:
         """
-        Return the names of the nodes this node is connected to.
+        Return the names of the remote nodes this node is connected to. Not all of these nodes may be used for communication (as opposed to conns property)
         """
         return {r.name for r in self.remotes.values()
                 if self.isRemoteConnected(r)}
 
-    @staticmethod
-    @abstractmethod
-    def isRemoteConnected(r) -> bool:
-        """
-        A node is considered to be connected if it is joined, allowed and alived.
-
-        :param r: the remote to check
-        """
-        raise NotImplementedError
-
-    def isConnectedTo(self, name: str = None, ha: Tuple = None):
-        # assert (name, ha).count(None) == 1, "One and only one of name or ha " \
-        #                                     "should be passed. Passed " \
-        #                                     "name: {}, ha: {}".format(name, ha)
-        try:
-            remote = self.getRemote(name, ha)
-        except RemoteNotFound:
-            return False
-        return self.isRemoteConnected(remote)
-
-    def getRemote(self, name: str = None, ha: Tuple = None):
-        """
-        Find the remote by name or ha.
-
-        :param name: the name of the remote to find
-        :param ha: host address pair the remote to find
-        :raises: RemoteNotFound
-        """
-        # assert (name, ha).count(None) == 1, "One and only one of name or ha " \
-        #                                     "should be passed. Passed " \
-        #                                     "name: {}, ha: {}".format(name, ha)
-        remote = self.findInRemotesByName(name) if name else \
-            self.findInRemotesByHA(ha)
-        if not remote:
-            raise RemoteNotFound(name or ha)
-        return remote
-
-    def findInRemotesByHA(self, remoteHa):
-        remotes = [r for r in self.remotes.values()
-                   if r.ha == remoteHa]
-        assert len(remotes) <= 1, "Found remotes {}: {}". \
-            format(len(remotes), [(r.name, r.ha) for r in remotes])
-        if remotes:
-            return remotes[0]
-        return None
-
-    def findInRemotesByName(self, name: str):
-        """
-        Find the remote by name.
-
-        :param name: the name of the remote to find
-        :raises: RemoteNotFound
-        """
-        try:
-            return next(r for r in self.remotes.values()
-                        if r.name == name)
-        except StopIteration:
-            return None
-
-    def hasRemote(self, name):
-        try:
-            self.getRemote(name=name)
-            return True
-        except RemoteNotFound:
-            return False
-
-    def removeRemoteByName(self, name: str) -> int:
-        """
-        Remove the remote by name.
-
-        :param name: the name of the remote to remove
-        :raises: RemoteNotFound
-        """
-        remote = self.getRemote(name)
-        rid = remote.uid
-        self.removeRemote(remote)
-        return rid
-
-    def getHa(self, name):
-        try:
-            remote = self.getRemote(name)
-        except RemoteNotFound:
-            return None
-        return remote.ha
-
     @property
     def conns(self) -> Set[str]:
         """
-        Get the connections of this node.
+        Get connections of this node which participate in the communication
 
         :return: set of names of the connected nodes
         """
@@ -184,37 +134,73 @@ class NetworkInterface:
         """
         pass
 
-    def prepForSending(self, msg: Dict, signer: Signer = None) -> Dict:
+    def isConnectedTo(self, name: str = None, ha: HA = None):
+        try:
+            remote = self.getRemote(name, ha)
+        except RemoteNotFound:
+            return False
+        return self.isRemoteConnected(remote)
+
+    def getRemote(self, name: str = None, ha: HA = None):
         """
-        Return a dictionary form of the message
+        Find the remote by name or ha.
 
-        :param msg: the message to be sent
-        :raises: ValueError if msg cannot be converted to an appropriate format
-            for transmission
+        :param name: the name of the remote to find
+        :param ha: host address pair the remote to find
+        :raises: RemoteNotFound
         """
+        return self.findInRemotesByName(name) if name else \
+            self.findInRemotesByHA(ha)
 
-        # TODO: Remove them once RAET is removed
-        from stp_core.zmq.zstack import ZStack
+    def findInRemotesByHA(self, remoteHa: HA):
+        remotes = [r for r in self.remotes.values()
+                   if r.ha == remoteHa]
+        if len(remotes) > 1:
+            raise DuplicateRemotes(remotes)
+        if not remotes:
+            raise RemoteNotFound(remoteHa)
+        return remotes[0]
 
-        if isinstance(msg, TaggedTupleBase):
-            tmsg = msg.melted()
-        elif isinstance(msg, Request):
-            tmsg = msg.as_dict
-        elif hasattr(msg, "_asdict"):
-            tmsg = dict(msg._asdict())
-        elif hasattr(msg, "__dict__"):
-            tmsg = dict(msg.__dict__)
-        else:
-            # TODO: Remove them once RAET is removed
-            if not isinstance(self, ZStack):
-                raise ValueError("Message cannot be converted to an appropriate "
-                                 "format for transmission")
-            else:
-                tmsg = msg
+    def findInRemotesByName(self, name: str):
+        """
+        Find the remote by name.
 
-        if signer:
-            return self.sign(tmsg, signer)
-        return tmsg
+        :param name: the name of the remote to find
+        :raises: RemoteNotFound
+        """
+        remotes = [r for r in self.remotes.values()
+                   if r.name == name]
+        if len(remotes) > 1:
+            raise DuplicateRemotes(remotes)
+        if not remotes:
+            raise RemoteNotFound(name)
+        return remotes[0]
+
+    def hasRemote(self, name):
+        try:
+            self.getRemote(name=name)
+            return True
+        except RemoteNotFound:
+            return False
+
+    def removeRemoteByName(self, name: str) -> int:
+        """
+        Remove the remote by name.
+
+        :param name: the name of the remote to remove
+        :raises: RemoteNotFound
+        """
+        remote = self.getRemote(name)
+        rid = remote.uid
+        self.removeRemote(remote)
+        return rid
+
+    def getHa(self, name):
+        try:
+            remote = self.getRemote(name)
+        except RemoteNotFound:
+            return None
+        return remote.ha
 
     def sameAddr(self, ha, ha2) -> bool:
         """
@@ -226,15 +212,6 @@ class NetworkInterface:
             return False
         else:
             return ha[0] in self.localips and ha2[0] in self.localips
-
-    def sign(self, msg: Dict, signer: Signer) -> Dict:
-        """
-        No signing is implemented. Returns the msg as it is.
-        An overriding class can define the signing implementation
-
-        :param msg: the message to sign
-        """
-        return msg  # don't sign by default
 
     def remotesByConnected(self):
         """

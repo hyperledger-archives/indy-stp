@@ -5,14 +5,13 @@ from typing import Any, Set, Optional
 from typing import Dict
 from typing import Tuple
 
-from plenum.common.config_util import getConfig
-from plenum.common.error import error
-from plenum.common.log import getlogger
 from raet.raeting import AutoMode, TrnsKind
 from raet.road.estating import RemoteEstate
 from raet.road.keeping import RoadKeep
 from raet.road.stacking import RoadStack
 from raet.road.transacting import Joiner, Allower, Messenger
+from stp_core.common.error import error
+from stp_core.common.log import getlogger
 
 from stp_core.crypto.util import ed25519SkToCurve25519, \
     getEd25519AndCurve25519Keys
@@ -34,8 +33,9 @@ Messenger.RedoTimeoutMin = 1.0
 Messenger.RedoTimeoutMax = 10.0
 
 
-class RStack(NetworkInterface, RoadStack):
+class RStack(NetworkInterface):
     def __init__(self, *args, **kwargs):
+
         checkPortAvailable(kwargs['ha'])
         basedirpath = kwargs.get('basedirpath')
         keep = RoadKeep(basedirpath=basedirpath,
@@ -52,30 +52,61 @@ class RStack(NetworkInterface, RoadStack):
             prihex = ed25519SkToCurve25519(sighex, toHex=True)
         kwargs['sigkey'] = sighex
         kwargs['prikey'] = prihex
+
         self.msgHandler = kwargs.pop('msgHandler', None)  # type: Callable
-        RoadStack.__init__(self, *args, **kwargs)
+        # if no timeout is set then message will never timeout
+        self.messageTimeout = kwargs.pop('messageTimeout', 0)
+
+        self.raetStack = RoadStack(self, *args, **kwargs)
+
         if self.ha[1] != kwargs['ha'].port:
             error("the stack port number has changed, likely due to "
                   "information in the keep. {} passed {}, actual {}".
                   format(kwargs['name'], kwargs['ha'].port, self.ha[1]))
-        self.created = time.perf_counter()
+        self._created = time.perf_counter()
         self.coro = None
-        config = getConfig()
-        try:
-            self.messageTimeout = config.RAETMessageTimeout
-        except AttributeError:
-            # if no timeout is set then message will never timeout
-            self.messageTimeout = 0
+
         self._conns = set()  # type: Set[str]
 
     def __repr__(self):
         return self.name
 
+    @property
+    def name(self):
+        return self.raetStack.name
+
+    @property
+    def remotes(self):
+        return self.raetStack.remotes
+
+    @property
+    def created(self):
+        return self._created
+
+    @staticmethod
+    def isRemoteConnected(r) -> bool:
+        """
+        A node is considered to be connected if it is joined, allowed and alived.
+
+        :param r: the remote to check
+        """
+        return r.joined and r.allowed and r.alived
+
+    def removeRemote(self, r):
+        self.raetStack.removeRemote(r)
+
+    def transmit(self, msg, uid, timeout=None):
+        self.raetStack.transmit(msg, uid, timeout=timeout)
+
+    @property
+    def ha(self):
+        return self.raetStack.ha
+
     def start(self):
         if not self.opened:
             self.open()
         logger.info("stack {} starting at {} in {} mode"
-                    .format(self, self.ha, self.keep.auto.name),
+                    .format(self, self.ha, self.raetStack.keep.auto.name),
                     extra={"cli": False})
         # self.coro = self._raetcoro()
         self.coro = self._raetcoro
@@ -101,7 +132,7 @@ class RStack(NetworkInterface, RoadStack):
             if x > 0:
                 for x in range(pracLimit):
                     try:
-                        self.msgHandler(self.rxMsgs.popleft())
+                        self.msgHandler(self.raetStack.rxMsgs.popleft())
                     except IndexError:
                         break
             return x
@@ -137,7 +168,7 @@ class RStack(NetworkInterface, RoadStack):
     async def _raetcoro(self):
         try:
             await self._serviceStack(self.age)
-            l = len(self.rxMsgs)
+            l = len(self.raetStack.rxMsgs)
         except Exception as ex:
             if isinstance(ex, OSError) and \
                     len(ex.args) > 0 and \
@@ -161,7 +192,7 @@ class RStack(NetworkInterface, RoadStack):
         :param age: update timestamp of this RoadStack to this value
         """
         self.updateStamp(age)
-        self.serviceAll()
+        self.raetStack.serviceAll()
 
     def updateStamp(self, age=None):
         """
@@ -169,61 +200,43 @@ class RStack(NetworkInterface, RoadStack):
 
         :param age: the timestamp will be set to this value
         """
-        self.store.changeStamp(age if age else self.age)
+        self.raetStack.store.changeStamp(age if age else self.age)
 
     @property
     def opened(self):
-        return self.server.opened
+        return self.raetStack.server.opened
 
     def open(self):
         """
         Open the UDP socket of this stack's server.
         """
-        self.server.open()  # close the UDP socket
+        self.raetStack.server.open()  # close the UDP socket
 
     def close(self):
         """
         Close the UDP socket of this stack's server.
         """
-        self.server.close()  # close the UDP socket
-
-    # TODO: Does this serve the same purpose as `conns`, if yes then remove
-    # @property
-    # def connecteds(self) -> Set[str]:
-    #     """
-    #     Return the names of the nodes this node is connected to.
-    #     """
-    #     return {r.name for r in self.remotes.values()
-    #             if self.isRemoteConnected(r)}
-
-    @staticmethod
-    def isRemoteConnected(r: RemoteEstate) -> bool:
-        """
-        A node is considered to be connected if it is joined, allowed and alived.
-
-        :param r: the remote to check
-        """
-        return r.joined and r.allowed and r.alived
+        self.raetStack.server.close()  # close the UDP socket
 
     @property
     def isKeySharing(self):
-        return self.keep.auto != AutoMode.never
+        return self.raetStack.keep.auto != AutoMode.never
 
     @property
     def verhex(self):
-        return self.local.signer.verhex
+        return self.raetStack.local.signer.verhex
 
     @property
     def keyhex(self):
-        return self.local.signer.keyhex
+        return self.raetStack.local.signer.keyhex
 
     @property
     def pubhex(self):
-        return self.local.priver.pubhex
+        return self.raetStack.local.priver.pubhex
 
     @property
     def prihex(self):
-        return self.local.priver.keyhex
+        return self.raetStack.local.priver.keyhex
 
     def send(self, msg: Any, remoteName: str):
         """
@@ -234,14 +247,14 @@ class RStack(NetworkInterface, RoadStack):
         """
         rid = self.getRemote(remoteName).uid
         # Setting timeout to never expire
-        self.transmit(msg, rid, timeout=self.messageTimeout)
+        self.raetStack.transmit(msg, rid, timeout=self.messageTimeout)
 
 
 class SimpleRStack(RStack):
-    def __init__(self, stackParams: Dict, msgHandler: Callable, sighex: str=None):
+    def __init__(self, stackParams: Dict, msgHandler: Callable, messageTimeout=None, sighex: str=None):
         self.stackParams = stackParams
         self.msgHandler = msgHandler
-        super().__init__(**stackParams, msgHandler=self.msgHandler, sighex=sighex)
+        super().__init__(**stackParams, msgHandler=self.msgHandler, messageTimeout=messageTimeout, sighex=sighex)
 
     def start(self):
         super().start()
@@ -343,7 +356,7 @@ class KITRStack(SimpleRStack):
             self.addRemote(remote)
         # updates the store time so the join timer is accurate
         self.updateStamp()
-        self.join(uid=remote.uid, cascade=True, timeout=30)
+        self.raetStack.join(uid=remote.uid, cascade=True, timeout=30)
         logger.info("{} looking for {} at {}:{}".
                     format(self, name or remote.name, *remote.ha),
                     extra={"cli": "PLAIN", "tags": ["node-looking"]})

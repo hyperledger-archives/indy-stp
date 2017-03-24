@@ -3,11 +3,12 @@ import random
 import string
 from binascii import unhexlify, hexlify
 
-# TODO returning a None when a None is passed is non-obvious; refactor
 from libnacl import crypto_box_SECRETKEYBYTES, nacl, crypto_box_PUBLICKEYBYTES
 from raet.nacling import Signer
 
+# TODO: move it to crypto repo
 
+# TODO returning a None when a None is passed is non-obvious; refactor
 def cleanSeed(seed=None):
     if seed:
         bts = seedFromHex(seed)
