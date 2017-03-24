@@ -1,15 +1,15 @@
+import logging
 from ioflo.base.consoling import getConsole
 from raet.nacling import Privateer
 from raet.raeting import AutoMode, Acceptance
 from raet.road.estating import RemoteEstate
 from raet.road.stacking import RoadStack
-from stp_core.common.log import getlogger
-from stp_core.crypto.signer_simple import SimpleSigner
+from raet.nacling import Signer as NaclSigner
 
 from stp_core.network.port_dispenser import genHa
 from stp_core.test.raet.helper import handshake, sendMsgs, cleanup, getRemote
 
-logger = getlogger()
+logger = logging.getLogger()
 
 
 def testPromiscuousConnection(tdir):
@@ -38,21 +38,21 @@ def testPromiscuousConnection(tdir):
 
 
 def testRaetPreSharedKeysPromiscous(tdir):
-    alphaSigner = SimpleSigner()
-    betaSigner = SimpleSigner()
+    alphaSigner = NaclSigner()
+    betaSigner = NaclSigner()
 
-    logger.debug("Alpha's verkey {}".format(alphaSigner.naclSigner.verhex))
-    logger.debug("Beta's verkey {}".format(betaSigner.naclSigner.verhex))
+    logger.debug("Alpha's verkey {}".format(alphaSigner.verhex))
+    logger.debug("Beta's verkey {}".format(betaSigner.verhex))
 
     alpha = RoadStack(name='alpha',
                       ha=genHa(),
-                      sigkey=alphaSigner.naclSigner.keyhex,
+                      sigkey=alphaSigner.keyhex,
                       auto=AutoMode.always,
                       basedirpath=tdir)
 
     beta = RoadStack(name='beta',
                      ha=genHa(),
-                     sigkey=betaSigner.naclSigner.keyhex,
+                     sigkey=betaSigner.keyhex,
                      main=True,
                      auto=AutoMode.always,
                      basedirpath=tdir)
@@ -60,7 +60,7 @@ def testRaetPreSharedKeysPromiscous(tdir):
     try:
 
         betaRemote = RemoteEstate(stack=alpha, ha=beta.ha,
-                                  verkey=betaSigner.naclSigner.verhex)
+                                  verkey=betaSigner.verhex)
 
         alpha.addRemote(betaRemote)
 
@@ -75,25 +75,25 @@ def testRaetPreSharedKeysPromiscous(tdir):
 
 
 def testRaetPreSharedKeysNonPromiscous(tdir):
-    alphaSigner = SimpleSigner()
-    betaSigner = SimpleSigner()
+    alphaSigner = NaclSigner()
+    betaSigner = NaclSigner()
 
     alphaPrivateer = Privateer()
     betaPrivateer = Privateer()
 
-    logger.debug("Alpha's verkey {}".format(alphaSigner.naclSigner.verhex))
-    logger.debug("Beta's verkey {}".format(betaSigner.naclSigner.verhex))
+    logger.debug("Alpha's verkey {}".format(alphaSigner.verhex))
+    logger.debug("Beta's verkey {}".format(betaSigner.verhex))
 
     alpha = RoadStack(name='alpha',
                       ha=genHa(),
-                      sigkey=alphaSigner.naclSigner.keyhex,
+                      sigkey=alphaSigner.keyhex,
                       prikey=alphaPrivateer.keyhex,
                       auto=AutoMode.never,
                       basedirpath=tdir)
 
     beta = RoadStack(name='beta',
                      ha=genHa(),
-                     sigkey=betaSigner.naclSigner.keyhex,
+                     sigkey=betaSigner.keyhex,
                      prikey=betaPrivateer.keyhex,
                      main=True,
                      auto=AutoMode.never,
@@ -101,13 +101,13 @@ def testRaetPreSharedKeysNonPromiscous(tdir):
 
     alpha.keep.dumpRemoteRoleData({
         "acceptance": Acceptance.accepted.value,
-        "verhex": betaSigner.naclSigner.verhex,
+        "verhex": betaSigner.verhex,
         "pubhex": betaPrivateer.pubhex
     }, "beta")
 
     beta.keep.dumpRemoteRoleData({
         "acceptance": Acceptance.accepted.value,
-        "verhex": alphaSigner.naclSigner.verhex,
+        "verhex": alphaSigner.verhex,
         "pubhex": alphaPrivateer.pubhex
     }, "alpha")
 
@@ -130,14 +130,14 @@ def testConnectionWithHaChanged(tdir):
     console = getConsole()
     console.reinit(verbosity=console.Wordage.verbose)
 
-    alphaSigner = SimpleSigner()
-    betaSigner = SimpleSigner()
+    alphaSigner = NaclSigner()
+    betaSigner = NaclSigner()
 
     alphaPrivateer = Privateer()
     betaPrivateer = Privateer()
 
-    logger.debug("Alpha's verkey {}".format(alphaSigner.naclSigner.verhex))
-    logger.debug("Beta's verkey {}".format(betaSigner.naclSigner.verhex))
+    logger.debug("Alpha's verkey {}".format(alphaSigner.verhex))
+    logger.debug("Beta's verkey {}".format(betaSigner.verhex))
 
     alpha = None
 
@@ -145,14 +145,14 @@ def testConnectionWithHaChanged(tdir):
         nonlocal alpha
         alpha = RoadStack(name='alpha',
                           ha=ha,
-                          sigkey=alphaSigner.naclSigner.keyhex,
+                          sigkey=alphaSigner.keyhex,
                           prikey=alphaPrivateer.keyhex,
                           auto=AutoMode.never,
                           basedirpath=tdir)
 
         alpha.keep.dumpRemoteRoleData({
             "acceptance": Acceptance.accepted.value,
-            "verhex": betaSigner.naclSigner.verhex,
+            "verhex": betaSigner.verhex,
             "pubhex": betaPrivateer.pubhex
         }, "beta")
 
@@ -161,7 +161,7 @@ def testConnectionWithHaChanged(tdir):
 
     beta = RoadStack(name='beta',
                      ha=genHa(),
-                     sigkey=betaSigner.naclSigner.keyhex,
+                     sigkey=betaSigner.keyhex,
                      prikey=betaPrivateer.keyhex,
                      main=True,
                      auto=AutoMode.never,
@@ -169,7 +169,7 @@ def testConnectionWithHaChanged(tdir):
 
     beta.keep.dumpRemoteRoleData({
         "acceptance": Acceptance.accepted.value,
-        "verhex": alphaSigner.naclSigner.verhex,
+        "verhex": alphaSigner.verhex,
         "pubhex": alphaPrivateer.pubhex
     }, "alpha")
 

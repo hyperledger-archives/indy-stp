@@ -8,6 +8,7 @@ from raet.nacling import Signer
 
 # TODO: move it to crypto repo
 
+
 # TODO returning a None when a None is passed is non-obvious; refactor
 def cleanSeed(seed=None):
     if seed:

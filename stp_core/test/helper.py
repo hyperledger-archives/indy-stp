@@ -1,8 +1,11 @@
 import os
 
+import logging
+
 from stp_core.common.log import getlogger
 
-logger = getlogger()
+logger = logging.getLogger()
+
 
 def createTempDir(tmpdir_factory, counter):
     tempdir = os.path.join(tmpdir_factory.getbasetemp().strpath,
