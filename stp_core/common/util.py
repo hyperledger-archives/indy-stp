@@ -1,5 +1,6 @@
 # TODO: move it to plenum-util repo
 
+
 class Singleton(type):
     _instances = {}
 

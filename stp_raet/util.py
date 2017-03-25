@@ -2,8 +2,8 @@ import json
 import os
 from collections import OrderedDict
 
-from stp_raet.nacling import Signer, Privateer
-from stp_raet.road.keeping import RoadKeep
+from stp_core.crypto.nacl_wrappers import Signer, Privateer
+from raet.road.keeping import RoadKeep
 
 from stp_core.crypto.util import ed25519SkToCurve25519, ed25519PkToCurve25519
 
@@ -136,7 +136,7 @@ def isRaetKeepDir(directory):
     return False
 
 
-def isPortUsed(keepDir, port):
+def isPortUsedByRaetRemote(keepDir, port):
     """
     Checks if the any local remote present in `keepDir` is bound to the given
     port

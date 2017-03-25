@@ -1,4 +1,14 @@
 import time
+from typing import NamedTuple
+from typing import Optional
+
+from raet.raeting import TrnsKind, PcktKind
+
+
+RaetDelay = NamedTuple("RaetDelay", [
+    ("tk", Optional[TrnsKind]),
+    ("pk", Optional[PcktKind]),
+    ("fromPort", Optional[int])])
 
 
 def handshake(*stacks):

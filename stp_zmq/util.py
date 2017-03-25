@@ -124,7 +124,7 @@ def initStackLocalKeys(name, baseDir, sigseed, override=False):
                                                                          name,
                                                                          seed=sigseed)
 
-    from zmq.zstack import ZStack
+    from stp_zmq.zstack import ZStack
     homeDir = ZStack.homeDirPath(baseDir, name)
     verifDirPath = ZStack.verifDirPath(homeDir)
     sigDirPath = ZStack.sigDirPath(homeDir)
