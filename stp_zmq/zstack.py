@@ -5,7 +5,7 @@ import shutil
 import sys
 import time
 from abc import abstractmethod
-from binascii import hexlify
+from binascii import hexlify, unhexlify
 from collections import deque
 from typing import Dict, Mapping, Callable, Tuple
 from typing import Set
@@ -13,6 +13,7 @@ from typing import Set
 # import stp_zmq.asyncio
 import zmq.auth
 from stp_core.crypto.nacl_wrappers import Signer, Verifier
+from stp_core.crypto.util import isHex, ed25519PkToCurve25519
 from stp_zmq.authenticator import MultiZapAuthenticator
 from zmq.utils import z85
 from zmq.utils.monitor import recv_monitor_message
@@ -23,7 +24,7 @@ from stp_core.network.network_interface import NetworkInterface
 from stp_core.ratchet import Ratchet
 from stp_core.types import HA
 from stp_zmq.util import createEncAndSigKeys, \
-    moveKeyFilesToCorrectLocations
+    moveKeyFilesToCorrectLocations, createCertsFromKeys
 
 logger = getlogger()
 
@@ -272,6 +273,64 @@ class ZStack(NetworkInterface):
             self.verifiers.pop(vkey, None)
         else:
             logger.warn('No remote named {} present')
+
+    @staticmethod
+    def initLocalKeys(name, baseDir, sigseed, override=False):
+        # TODO: Implement override functionality
+        sDir = os.path.join(baseDir, '__sDir')
+        eDir = os.path.join(baseDir, '__eDir')
+        os.makedirs(sDir, exist_ok=True)
+        os.makedirs(eDir, exist_ok=True)
+        (public_key, secret_key), (verif_key, sig_key) = createEncAndSigKeys(eDir,
+                                                                             sDir,
+                                                                             name,
+                                                                             seed=sigseed)
+
+        homeDir = ZStack.homeDirPath(baseDir, name)
+        verifDirPath = ZStack.verifDirPath(homeDir)
+        sigDirPath = ZStack.sigDirPath(homeDir)
+        secretDirPath = ZStack.secretDirPath(homeDir)
+        pubDirPath = ZStack.publicDirPath(homeDir)
+        for d in (homeDir, verifDirPath, sigDirPath, secretDirPath, pubDirPath):
+            os.makedirs(d, exist_ok=True)
+
+        moveKeyFilesToCorrectLocations(sDir, verifDirPath, sigDirPath)
+        moveKeyFilesToCorrectLocations(eDir, pubDirPath, secretDirPath)
+
+        shutil.rmtree(sDir)
+        shutil.rmtree(eDir)
+        return hexlify(public_key).decode(), hexlify(verif_key).decode()
+
+
+    @staticmethod
+    def initRemoteKeys(name, remoteName, baseDir, verkey, override=False):
+        homeDir = ZStack.homeDirPath(baseDir, name)
+        verifDirPath = ZStack.verifDirPath(homeDir)
+        pubDirPath = ZStack.publicDirPath(homeDir)
+        for d in (homeDir, verifDirPath, pubDirPath):
+            os.makedirs(d, exist_ok=True)
+
+        if isHex(verkey):
+            verkey = unhexlify(verkey)
+
+        createCertsFromKeys(verifDirPath, remoteName, z85.encode(verkey))
+        public_key = ed25519PkToCurve25519(verkey)
+        createCertsFromKeys(pubDirPath, remoteName, z85.encode(public_key))
+
+    @staticmethod
+    def areKeysSetup(name, baseDir):
+        homeDir = ZStack.homeDirPath(baseDir, name)
+        verifDirPath = ZStack.verifDirPath(homeDir)
+        pubDirPath = ZStack.publicDirPath(homeDir)
+        sigDirPath = ZStack.sigDirPath(homeDir)
+        secretDirPath = ZStack.secretDirPath(homeDir)
+        for d in (verifDirPath, pubDirPath):
+            if not os.path.isfile(os.path.join(d, '{}.key'.format(name))):
+                return False
+        for d in (sigDirPath, secretDirPath):
+            if not os.path.isfile(os.path.join(d, '{}.key_secret'.format(name))):
+                return False
+        return True
 
     @staticmethod
     def keyDirNames():
@@ -594,11 +653,12 @@ class ZStack(NetworkInterface):
     def doProcessReceived(self, msg, frm, ident):
         return msg
 
-
-    def connect(self, name, ha=None, verKey=None, publicKey=None):
+    def connect(self, name=None, remoteId=None, ha=None, verKey=None, publicKey=None):
         """
         Connect to the node specified by name.
         """
+        if not name:
+            raise ValueError('Name needs to be specified')
         if name not in self.remotes:
             if not publicKey:
                 try:

@@ -1,6 +1,8 @@
+import os
 import sys
 import time
 from collections import Callable
+from collections import OrderedDict
 from typing import Any, Set, Optional
 from typing import Dict
 from typing import Tuple
@@ -12,13 +14,15 @@ from raet.road.stacking import RoadStack
 from raet.road.transacting import Joiner, Allower, Messenger
 from stp_core.common.error import error
 from stp_core.common.log import getlogger
+from stp_core.crypto.nacl_wrappers import Signer
 
 from stp_core.crypto.util import ed25519SkToCurve25519, \
-    getEd25519AndCurve25519Keys
+    getEd25519AndCurve25519Keys, ed25519PkToCurve25519
 from stp_core.network.network_interface import NetworkInterface
 from stp_core.network.util import checkPortAvailable, distributedConnectionMap
 from stp_core.ratchet import Ratchet
 from stp_core.types import HA
+from stp_raet.util import getLocalKeep
 
 logger = getlogger()
 
@@ -57,7 +61,7 @@ class RStack(NetworkInterface):
         # if no timeout is set then message will never timeout
         self.messageTimeout = kwargs.pop('messageTimeout', 0)
 
-        self.raetStack = RoadStack(self, *args, **kwargs)
+        self.raetStack = RoadStack(*args, **kwargs)
 
         if self.ha[1] != kwargs['ha'].port:
             error("the stack port number has changed, likely due to "
@@ -92,6 +96,121 @@ class RStack(NetworkInterface):
         """
         return r.joined and r.allowed and r.alived
 
+    @staticmethod
+    def initLocalKeys(name, baseDir, sigseed, override=False):
+        """
+        Initialize RAET local keep. Write local role data to file.
+
+        :param name: name of the node
+        :param baseDir: base directory
+        :param pkseed: seed to generate public and private key pair
+        :param sigseed: seed to generate signing and verification key pair
+        :param override: overwrite the local role.json file if already exists
+        :return: tuple(public key, verification key)
+        """
+        rolePath = os.path.join(baseDir, name, "role", "local", "role.json")
+        if os.path.isfile(rolePath):
+            if not override:
+                raise FileExistsError("Keys exists for local role {}".format(name))
+
+        if sigseed and not isinstance(sigseed, bytes):
+            sigseed = sigseed.encode()
+
+        signer = Signer(sigseed)
+        keep = RoadKeep(stackname=name, baseroledirpath=baseDir)
+        sigkey, verkey = signer.keyhex, signer.verhex
+        prikey, pubkey = ed25519SkToCurve25519(sigkey, toHex=True), \
+                         ed25519PkToCurve25519(verkey, toHex=True)
+        data = OrderedDict([
+            ("role", name),
+            ("prihex", prikey),
+            ("sighex", sigkey)
+        ])
+        keep.dumpLocalRoleData(data)
+        return pubkey.decode(), verkey.decode()
+
+    @staticmethod
+    def initRemoteKeys(name, remoteName, baseDir, verkey, override=False):
+        """
+        Initialize RAET remote keep
+
+        :param name: name of the node
+        :param remoteName: name of the remote to store keys for
+        :param baseDir: base directory
+        :param pubkey: public key of the remote
+        :param verkey: private key of the remote
+        :param override: overwrite the role.remoteName.json file if it already
+        exists.
+        """
+        rolePath = os.path.join(baseDir, name, "role", "remote", "role.{}.json".
+                                format(remoteName))
+        if os.path.isfile(rolePath):
+            if not override:
+                raise FileExistsError("Keys exists for remote role {}".
+                                      format(remoteName))
+
+        keep = RoadKeep(stackname=name, baseroledirpath=baseDir)
+        data = OrderedDict([
+            ('role', remoteName),
+            ('acceptance', 1),
+            ('pubhex', ed25519PkToCurve25519(verkey, toHex=True)),
+            ('verhex', verkey)
+        ])
+        keep.dumpRemoteRoleData(data, role=remoteName)
+
+
+    @staticmethod
+    def areKeysSetup(name, baseDir):
+        """
+        Check that the local RAET keep has the values of role, sighex and prihex
+        populated for the given node
+
+        :param name: the name of the node to check the keys for
+        :param baseDir: base directory of Plenum
+        :return: whether the keys are setup
+        """
+        localRoleData = getLocalKeep(name=name, baseDir=baseDir)
+
+        for key in ['role', 'sighex', 'prihex']:
+            if localRoleData.get(key) is None:
+                return False
+        return True
+
+    def connect(self, name=None, ha=None, verKey=None, publicKey=None, remoteId=None):
+        """
+        Connect to the node specified by name.
+
+        :param name: name of the node to connect to
+        :type name: str or (HA, tuple)
+        :return: the uid of the remote estate, or None if a connect is not
+            attempted
+        """
+        # if not self.isKeySharing:
+        #     logger.debug("{} skipping join with {} because not key sharing".
+        #                   format(self, name))
+        #     return None
+        if remoteId:
+            remote = self.remotes[remoteId]
+        else:
+            if ha:
+                node_ha = ha
+            elif name:
+                node_ha = self.registry[name]
+            else:
+                raise ValueError('Either name or Host Address must be provided to connect to a node in Raet stack')
+
+            remote = RemoteEstate(stack=self.raetStack,
+                                  ha=node_ha)
+            self.raetStack.addRemote(remote)
+
+        # updates the store time so the join timer is accurate
+        self.updateStamp()
+        self.raetStack.join(uid=remote.uid, cascade=True, timeout=30)
+        logger.info("{} looking for {} at {}:{}".
+                    format(self, name or remote.name, *remote.ha),
+                    extra={"cli": "PLAIN", "tags": ["node-looking"]})
+        return remote.uid
+
     def removeRemote(self, r):
         self.raetStack.removeRemote(r)
 
@@ -106,7 +225,7 @@ class RStack(NetworkInterface):
         if not self.opened:
             self.open()
         logger.info("stack {} starting at {} in {} mode"
-                    .format(self, self.ha, self.raetStack.keep.auto.name),
+                    .format(self, self.ha, self.raetStack.keep.auto),
                     extra={"cli": False})
         # self.coro = self._raetcoro()
         self.coro = self._raetcoro
@@ -251,10 +370,10 @@ class RStack(NetworkInterface):
 
 
 class SimpleRStack(RStack):
-    def __init__(self, stackParams: Dict, msgHandler: Callable, messageTimeout=None, sighex: str=None):
+    def __init__(self, stackParams: Dict, msgHandler: Callable, sighex: str=None):
         self.stackParams = stackParams
         self.msgHandler = msgHandler
-        super().__init__(**stackParams, msgHandler=self.msgHandler, messageTimeout=messageTimeout, sighex=sighex)
+        super().__init__(**stackParams, msgHandler=self.msgHandler, sighex=sighex)
 
     def start(self):
         super().start()
@@ -304,7 +423,7 @@ class KITRStack(SimpleRStack):
         if not self.findInNodeRegByHA(remote.ha):
             logger.debug('Remote {} with HA {} not added -> not found in registry'.format(remote.name, remote.ha))
             return
-        return super(KITRStack, self).addRemote(remote, dump)
+        return self.raetStack.addRemote(remote, dump)
 
     def createRemote(self, ha):
         if ha and not self.findInNodeRegByHA(ha):
@@ -327,40 +446,6 @@ class KITRStack(SimpleRStack):
     def handleJoinFromUnregisteredRemote(self, sha):
         logger.debug('Remote with HA {} not added -> not found in registry'.format(sha))
         return None
-
-    def connect(self, name, rid: Optional[int]=None) -> Optional[int]:
-        """
-        Connect to the node specified by name.
-
-        :param name: name of the node to connect to
-        :type name: str or (HA, tuple)
-        :return: the uid of the remote estate, or None if a connect is not
-            attempted
-        """
-        # if not self.isKeySharing:
-        #     logger.debug("{} skipping join with {} because not key sharing".
-        #                   format(self, name))
-        #     return None
-        if rid:
-            remote = self.remotes[rid]
-        else:
-            if isinstance(name, (HA, tuple)):
-                node_ha = name
-            elif isinstance(name, str):
-                node_ha = self.registry[name]
-            else:
-                raise AttributeError()
-
-            remote = RemoteEstate(stack=self,
-                                  ha=node_ha)
-            self.addRemote(remote)
-        # updates the store time so the join timer is accurate
-        self.updateStamp()
-        self.raetStack.join(uid=remote.uid, cascade=True, timeout=30)
-        logger.info("{} looking for {} at {}:{}".
-                    format(self, name or remote.name, *remote.ha),
-                    extra={"cli": "PLAIN", "tags": ["node-looking"]})
-        return remote.uid
 
     @property
     def notConnectedNodes(self) -> Set[str]:
@@ -492,7 +577,7 @@ class KITRStack(SimpleRStack):
             logger.debug("{} disconnected node {} is joined".format(
                 self, disconn.name), extra={"cli": "STATUS"})
         else:
-            self.connect(dname, disconn.uid)
+            self.connect(dname, remoteId=disconn.uid)
 
     def findInNodeRegByHA(self, remoteHa):
         """

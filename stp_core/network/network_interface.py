@@ -35,6 +35,20 @@ class NetworkInterface:
         """
         raise NotImplementedError
 
+    @staticmethod
+    @abstractmethod
+    def initLocalKeys(name, baseDir, sigseed, override=False):
+        raise NotImplementedError
+
+    @staticmethod
+    def initRemoteKeys(name, remoteName, baseDir, verkey, override=False):
+        raise NotImplementedError
+
+    @staticmethod
+    @abstractmethod
+    def areKeysSetup(name, baseDir):
+        raise NotImplementedError
+
     @abstractmethod
     def removeRemote(self, r):
         raise NotImplementedError
@@ -49,6 +63,10 @@ class NetworkInterface:
 
     @abstractmethod
     def stop(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def connect(self, name=None, remoteId=None, ha=None, verKey=None, publicKey=None):
         raise NotImplementedError
 
     @property
@@ -133,6 +151,7 @@ class NetworkInterface:
         Subclasses can override
         """
         pass
+
 
     def isConnectedTo(self, name: str = None, ha: HA = None):
         try:
