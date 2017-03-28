@@ -60,8 +60,8 @@ def connectStacks(stacks):
     for stack in stacks:
         for otherStack in stacks:
             if stack != otherStack:
-                stack.connect(otherStack.name, otherStack.ha,
-                              otherStack.verKey, otherStack.publicKey)
+                stack.connect(name=otherStack.name, ha=otherStack.ha,
+                              verKey=otherStack.verKey, publicKey=otherStack.publicKey)
 
 
 def checkStacksConnected(stacks):

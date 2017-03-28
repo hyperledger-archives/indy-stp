@@ -276,7 +276,6 @@ class ZStack(NetworkInterface):
 
     @staticmethod
     def initLocalKeys(name, baseDir, sigseed, override=False):
-        # TODO: Implement override functionality
         sDir = os.path.join(baseDir, '__sDir')
         eDir = os.path.join(baseDir, '__eDir')
         os.makedirs(sDir, exist_ok=True)
