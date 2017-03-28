@@ -14,6 +14,7 @@ from typing import Set
 import zmq.auth
 from stp_core.crypto.nacl_wrappers import Signer, Verifier
 from stp_core.crypto.util import isHex, ed25519PkToCurve25519
+from stp_core.network.keep_in_touch import KITNetworkInterface
 from stp_zmq.authenticator import MultiZapAuthenticator
 from zmq.utils import z85
 from zmq.utils.monitor import recv_monitor_message
@@ -1002,17 +1003,12 @@ class SimpleZStack(ZStack):
                          onlyListener=onlyListener)
 
 
-class KITZStack(SimpleZStack):
+class KITZStack(SimpleZStack, KITNetworkInterface):
     # RStack which maintains connections mentioned in its registry
     def __init__(self, stackParams: dict, msgHandler: Callable,
                  registry: Dict[str, HA], seed=None, sighex: str = None):
-        super().__init__(stackParams, msgHandler, seed=seed, sighex=sighex)
-        self.registry = registry
-
-        self.ratchet = Ratchet(a=8, b=0.198, c=-4, base=8, peak=3600)
-
-        # holds the last time we checked remotes
-        self.nextCheck = 0
+        SimpleZStack.__init__(self, stackParams, msgHandler, seed=seed, sighex=sighex)
+        KITNetworkInterface.__init__(self, registry=registry)
 
     def maintainConnections(self, force=False):
         """
@@ -1029,6 +1025,17 @@ class KITZStack(SimpleZStack):
                          format(self, self.nextCheck - cur))
             return True
         return False
+
+    def reconcileNodeReg(self):
+        matches = set()
+        for r in self.remotes.values():
+            if r.name in self.registry:
+                if self.sameAddr(r.ha, self.registry[r.name]):
+                    matches.add(r.name)
+                    logger.debug("{} matched remote is {} {}".
+                                 format(self, r.uid, r.ha))
+
+        return set(self.registry.keys()) - matches - {self.name,}
 
     def retryDisconnected(self, exclude=None):
         exclude = exclude or {}
@@ -1054,44 +1061,6 @@ class KITZStack(SimpleZStack):
                                  format(self, name, ex))
         return missing
 
-    def reconcileNodeReg(self):
-        matches = set()
-        for r in self.remotes.values():
-            if r.name in self.registry:
-                if self.sameAddr(r.ha, self.registry[r.name]):
-                    matches.add(r.name)
-                    logger.debug("{} matched remote is {} {}".
-                                 format(self, r.uid, r.ha))
-
-        return set(self.registry.keys()) - matches - {self.name,}
-
     async def service(self, limit=None):
         c = await super().service(limit)
         return c
-
-    def serviceLifecycle(self) -> None:
-        self.checkConns()
-        self.maintainConnections()
-
-    @property
-    def notConnectedNodes(self) -> Set[str]:
-        """
-        Returns the names of nodes in the registry this node is NOT connected
-        to.
-        """
-        return set(self.registry.keys()) - self.conns
-
-    # The next method is copied from KITRStack from rstack.py
-    def findInNodeRegByHA(self, remoteHa):
-        """
-        Returns the name of the remote by HA if found in the node registry, else
-        returns None
-        """
-        regName = [nm for nm, ha in self.registry.items()
-                   if self.sameAddr(ha, remoteHa)]
-        if len(regName) > 1:
-            raise RuntimeError("more than one node registry entry with the "
-                               "same ha {}: {}".format(remoteHa, regName))
-        if regName:
-            return regName[0]
-        return None

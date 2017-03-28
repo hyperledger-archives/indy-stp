@@ -1,7 +1,8 @@
 from stp_core.crypto.util import randomSeed
 from stp_core.loop.eventually import eventually
 from stp_core.network.port_dispenser import genHa
-from stp_zmq.test.helper import genKeys, Printer, prepStacks, chkPrinted
+from stp_core.test.helper import Printer, prepStacks, chkPrinted
+from stp_zmq.test.helper import genKeys
 from stp_zmq.zstack import ZStack
 
 
@@ -21,7 +22,7 @@ def testRestricted2ZStackCommunication(tdir, looper):
     beta = ZStack(names[1], ha=genHa(), basedirpath=tdir, msgHandler=betaP.print,
                   restricted=True)
 
-    prepStacks(looper, alpha, beta)
+    prepStacks(looper, alpha, beta, connect=True, useKeys=True)
     alpha.send({'greetings': 'hi'}, beta.name)
     beta.send({'greetings': 'hello'}, alpha.name)
 
@@ -43,7 +44,7 @@ def testUnrestricted2ZStackCommunication(tdir, looper):
     beta = ZStack(names[1], ha=genHa(), basedirpath=tdir, msgHandler=betaP.print,
                   restricted=False, seed=randomSeed())
 
-    prepStacks(looper, alpha, beta)
+    prepStacks(looper, alpha, beta, connect=True, useKeys=True)
     alpha.send({'greetings': 'hi'}, beta.name)
     beta.send({'greetings': 'hello'}, alpha.name)
 
