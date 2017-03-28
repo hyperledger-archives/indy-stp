@@ -12,3 +12,11 @@ def genKeys(baseDir, names):
         os.makedirs(d, exist_ok=True)
         for kd in ZStack.keyDirNames():
             copy_tree(os.path.join(baseDir, kd), os.path.join(d, kd))
+
+def makeHandler(receivedMessages):
+    def handler(m):
+        msg, sender = m
+        receivedMessages.append(msg)
+        print("Got message", msg)
+
+    return handler

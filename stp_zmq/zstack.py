@@ -30,7 +30,8 @@ from stp_zmq.util import createEncAndSigKeys, \
 logger = getlogger()
 
 LINGER_TIME = 20
-
+DEFAULT_LISTENER_QUOTA = 100
+DEFAULT_REMOTE_QUOTA = 100
 
 # TODO: Separate directories are maintainer for public keys and verification
 # keys of remote, same direcotry can be used, infact preserve only
@@ -204,13 +205,16 @@ class ZStack(NetworkInterface):
     messageTimeout = 3
 
     def __init__(self, name, ha, basedirpath, msgHandler, restricted=True,
-                 seed=None, onlyListener=False):
+                 seed=None, onlyListener=False,
+                 listenerQuota=DEFAULT_LISTENER_QUOTA, remoteQuota=DEFAULT_REMOTE_QUOTA):
         # TODO, remove *args, **kwargs after removing test
         self.name = name
         self.ha = ha
         self.basedirpath = basedirpath
         self.msgHandler = msgHandler
         self.seed = seed
+        self.listenerQuota = listenerQuota
+        self.remoteQuota = remoteQuota
 
         self.homeDir = None
         # As of now there would be only one file in secretKeysDir and sigKeyDir
@@ -546,64 +550,74 @@ class ZStack(NetworkInterface):
             return self.processReceived(pracLimit)
         return 0
 
-    async def _serviceStack(self, age):
-        # TODO: age is unused
+    def _verifyAndAppend(self, msg, ident):
+        if self.verify(msg, ident):
+            self.rxMsgs.append((msg[:-self.sigLen].decode(), ident))
+        else:
+            logger.error('{} got error while '
+                         'verifying message {} from {}'
+                         .format(self, msg, ident))
 
-        def verifyAndAppend(msg, ident):
-            if self.verify(msg, ident):
-                self.rxMsgs.append((msg[:-self.sigLen].decode(), ident))
-            else:
-                logger.error('{} got error while verifying message {} from {}'
-                             .format(self, msg, ident))
-
-        # TODO: If a stack is being bombarded with messages this can lead to the
-        # stack always busy in receiving messages and never getting time to
-        # complete processing fo messages.
-        # TODO: Optimize this
+    def _receiveFromListener(self, quota) -> int:
+        """
+        Receives messages from listener
+        :param quota: number of messages to receive
+        :return: number of received messages
+        """
+        assert quota
         i = 0
-        while True:
+        while i < quota:
             try:
-                # ident, msg = await self.listener.recv_multipart(
-                #     flags=test.NOBLOCK)
                 ident, msg = self.listener.recv_multipart(flags=zmq.NOBLOCK)
                 if not msg:
                     # Router probing sends empty message on connection
                     continue
+                i += 1
                 if self.onlyListener and ident not in self.remotesByKeys:
                     self.peersWithoutRemotes.add(ident)
-                i += 1
-                verifyAndAppend(msg, ident)
+                self._verifyAndAppend(msg, ident)
             except zmq.Again:
-                if i > 0:
-                    logger.trace('{} got {} messages through listener'.
-                                 format(self, i))
                 break
+        if i > 0:
+            logger.trace('{} got {} messages through listener'.
+                         format(self, i))
+        return i
 
+    def _receiveFromRemotes(self, quotaPerRemote) -> int:
+        """
+        Receives messages from remotes
+        :param quotaPerRemote: number of messages to receive from one remote
+        :return: number of received messages
+        """
+
+        assert quotaPerRemote
+        totalReceived = 0
         for ident, remote in self.remotesByKeys.items():
             if not remote.socket:
                 continue
-
-            sock = remote.socket
-
             i = 0
-            while True:
+            sock = remote.socket
+            while i < quotaPerRemote:
                 try:
-                    # ident, msg = await sock.recv(flags=test.NOBLOCK)
-                    # msg = sock.recv(flags=test.NOBLOCK)
                     msg, = sock.recv_multipart(flags=zmq.NOBLOCK)
                     if not msg:
                         # Router probing sends empty message on connection
                         continue
                     i += 1
-                    verifyAndAppend(msg, ident)
+                    self._verifyAndAppend(msg, ident)
                 except zmq.Again:
-                    if i > 0:
-                        logger.trace('{} got {} messages through remote {}'.
-                                     format(self, i, remote))
                     break
+            if i > 0:
+                logger.trace('{} got {} messages through remote {}'.
+                             format(self, i, remote))
+            totalReceived += i
+        return totalReceived
 
+    async def _serviceStack(self, age):
+        # TODO: age is unused
+        self._receiveFromListener(quota=self.listenerQuota)
+        self._receiveFromRemotes(quotaPerRemote=self.remoteQuota)
         return len(self.rxMsgs)
-
 
 
     def processReceived(self, limit):
@@ -981,7 +995,8 @@ class DummyKeep:
 
 class SimpleZStack(ZStack):
     def __init__(self, stackParams: Dict, msgHandler: Callable, seed=None,
-                 onlyListener=False, sighex: str=None):
+                 onlyListener=False, sighex: str=None,
+                 listenerQuota=DEFAULT_LISTENER_QUOTA, remoteQuota=DEFAULT_REMOTE_QUOTA):
         # TODO: sighex is unused as of now, remove once test is removed or
         # maybe use sighex to generate all keys, DECISION DEFERRED
 
@@ -1000,14 +1015,17 @@ class SimpleZStack(ZStack):
 
         super().__init__(name, ha, basedirpath, msgHandler=self.msgHandler,
                          restricted=restricted, seed=seed,
-                         onlyListener=onlyListener)
+                         onlyListener=onlyListener,
+                         listenerQuota=listenerQuota, remoteQuota=remoteQuota)
 
 
 class KITZStack(SimpleZStack, KITNetworkInterface):
     # RStack which maintains connections mentioned in its registry
     def __init__(self, stackParams: dict, msgHandler: Callable,
-                 registry: Dict[str, HA], seed=None, sighex: str = None):
-        SimpleZStack.__init__(self, stackParams, msgHandler, seed=seed, sighex=sighex)
+                 registry: Dict[str, HA], seed=None, sighex: str = None,
+                 listenerQuota=DEFAULT_LISTENER_QUOTA, remoteQuota=DEFAULT_REMOTE_QUOTA):
+        SimpleZStack.__init__(self, stackParams, msgHandler, seed=seed, sighex=sighex,
+                              listenerQuota=listenerQuota, remoteQuota=remoteQuota)
         KITNetworkInterface.__init__(self, registry=registry)
 
     def maintainConnections(self, force=False):
