@@ -2,7 +2,7 @@
 
 @Library('SovrinHelpers') _
 
-def name = 'ledger'
+def name = 'stp'
 
 def testUbuntu = {
     try {

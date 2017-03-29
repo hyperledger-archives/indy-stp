@@ -1,6 +1,6 @@
 FROM microsoft/windowsservercore
 
-LABEL Description="ledger" Vendor="Evernym"
+LABEL Description="stp" Vendor="Evernym"
 
 # Install environment
 
