@@ -128,7 +128,6 @@ class Remote:
 
     @property
     def hasLostConnection(self):
-        logger.trace('Getting monitor socket for remote {} with socket state {}'.format(self, self.socket.closed))
         if self.socket is None:
             logger.warn('Remote {} already disconnected'.format(self))
             return False
@@ -499,7 +498,6 @@ class ZStack(NetworkInterface):
     def isKeySharing(self):
         # TODO: Change name after removing test
         return not self.isRestricted
-
 
     def isConnectedTo(self, name: str = None, ha: Tuple = None):
         if self.onlyListener:

@@ -15,6 +15,7 @@ def createTempDir(tmpdir_factory, counter):
     logger.debug("module-level temporary directory: {}".format(tempdir))
     return tempdir
 
+
 class Printer:
     def __init__(self, name):
         self.name = name
@@ -24,8 +25,10 @@ class Printer:
         print('{} printing... {}'.format(self.name, m))
         self.printeds.append(m)
 
+
 def chkPrinted(p, m):
     assert m in [_[0] for _ in p.printeds]
+
 
 class SMotor(Motor):
     def __init__(self, stack):
@@ -43,6 +46,7 @@ class SMotor(Motor):
 
     def stop(self):
         self.stack.stop()
+
 
 def prepStacks(looper, *stacks, connect=True, useKeys=True):
     for stack in stacks:

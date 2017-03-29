@@ -13,6 +13,7 @@ def genKeys(baseDir, names):
         for kd in ZStack.keyDirNames():
             copy_tree(os.path.join(baseDir, kd), os.path.join(d, kd))
 
+
 def makeHandler(receivedMessages):
     def handler(m):
         msg, sender = m
