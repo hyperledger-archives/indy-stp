@@ -14,7 +14,7 @@ def testUbuntu = {
 
         testEnv.inside {
             echo 'Ubuntu Test: Install dependencies'
-            testHelpers.installDeps()
+            testHelpers.installDeps(['raet', 'BitVector'])
 
             echo 'Ubuntu Test: Test'
             testHelpers.testJunit()
@@ -48,7 +48,7 @@ def testWindowsNoDocker = {
 
         testHelpers.createVirtualEnvAndExecute({ python, pip ->
             echo 'Windows No Docker Test: Install dependencies'
-            testHelpers.installDepsBat(python, pip)
+            testHelpers.installDepsBat(python, pip, ['raet', 'BitVector'])
             
             echo 'Windows No Docker Test: Test'
             testHelpers.testJunitBat(python, pip)
