@@ -40,7 +40,11 @@ def testWindowsNoDocker = {
             testHelpers.installDepsBat(python, pip, ['raet', 'BitVector'])
             
             echo 'Windows No Docker Test: Test'
-            testHelpers.testJunitBat(python, pip)
+            // XXX temporary, until issues with tests will be resolved
+            // (some tests fail and seems it hangs out pytest)
+            timeout(time: 60, unit: 'SECONDS') {
+                testHelpers.testJunitBat(python, pip)
+            }
         })
     }
     finally {
