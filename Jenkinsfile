@@ -27,18 +27,7 @@ def testUbuntu = {
 }
 
 def testWindows = {
-    try {
-        echo 'Windows Test: Checkout csm'
-        checkout scm
-
-        echo 'Windows Test: Build docker image'
-        dockerHelpers.buildAndRunWindows(name, testHelpers.installDepsWindowsCommands() + testHelpers.testJunitWindowsCommands())
-        junit 'test-result.xml'
-    }
-    finally {
-        echo 'Windows Test: Cleanup'
-        step([$class: 'WsCleanup'])
-    }
+    echo "TODO: not implemented"
 }
 
 def testWindowsNoDocker = {
@@ -60,4 +49,4 @@ def testWindowsNoDocker = {
     }
 }
 
-testAndPublish(name, [ubuntu: testUbuntu, windows: testWindows, windowsNoDocker: testWindowsNoDocker])
+testAndPublish(name, [ubuntu: testUbuntu, windows: testWindowsNoDocker, windowsNoDocker: testWindowsNoDocker])
