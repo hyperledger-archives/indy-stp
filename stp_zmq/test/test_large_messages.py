@@ -4,7 +4,6 @@ import zmq
 from stp_core.crypto.util import randomSeed
 from stp_core.network.port_dispenser import genHa
 from stp_core.test.helper import SMotor
-from stp_core.types import HA
 from stp_zmq.test.helper import genKeys
 from stp_zmq.zstack import SimpleZStack
 
@@ -13,8 +12,6 @@ def testSimpleZStacksMsgs(tdir, looper):
     names = ['Alpha', 'Beta']
     genKeys(tdir, names)
     names = ['Alpha', 'Beta']
-    aha = genHa()
-    bha = genHa()
     aseed = randomSeed()
     bseed = randomSeed()
 
@@ -39,7 +36,7 @@ def testSimpleZStacksMsgs(tdir, looper):
 
     stackParams = {
         "name": names[0],
-        "ha": HA("0.0.0.0", aha[1]),
+        "ha": genHa(),
         "auto": 2,
         "basedirpath": tdir
     }
@@ -47,7 +44,7 @@ def testSimpleZStacksMsgs(tdir, looper):
 
     stackParams = {
         "name": names[1],
-        "ha": HA("0.0.0.0", bha[1]),
+        "ha": genHa(),
         "auto": 2,
         "basedirpath": tdir
     }
