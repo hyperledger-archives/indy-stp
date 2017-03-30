@@ -2,6 +2,7 @@ import logging
 import socket
 from collections import OrderedDict
 from typing import List
+from stp_core.network.exceptions import PortNotAvailable
 
 import itertools
 
@@ -23,7 +24,7 @@ def checkPortAvailable(ha):
             logging.warning("Checked port availability for opening "
                             "as {} but address was already in use: {}".
                             format(typ, ha))
-            raise ex
+            raise PortNotAvailable(ha.port)
         finally:
             sock.close()
 
