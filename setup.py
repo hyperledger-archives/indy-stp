@@ -31,7 +31,7 @@ METADATA = os.path.join(SETUP_DIRNAME, 'stp_core', '__metadata__.py')
 exec(compile(open(METADATA).read(), METADATA, 'exec'))
 
 setup(
-    name='stp',
+    name='stp-dev',
     version=__version__,
     description='Secure Transport Protocol core',
     url='https://github.com/evernym/stp',
@@ -44,7 +44,7 @@ setup(
         '': ['*.txt', '*.md', '*.rst', '*.json', '*.conf', '*.html',
              '*.css', '*.ico', '*.png', 'LICENSE', 'LEGAL']},
     include_package_data=True,
-    install_requires=['portalocker==0.5.7', 'test', 'pyzmq', 'ioflo==1.5.4'],
+    install_requires=['portalocker==0.5.7', 'test', 'pyzmq', 'raet', 'ioflo==1.5.4'],
     setup_requires=['pytest-runner'],
     tests_require=['pytest'],
     scripts=[],
