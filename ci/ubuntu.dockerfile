@@ -10,7 +10,8 @@ RUN apt-get install -y \
 	wget \
 	python3.5 \
 	python3-pip \
-	python-setuptools
+	python-setuptools \
+	python3-nacl
 RUN pip3 install -U \ 
 	pip \ 
 	setuptools \
