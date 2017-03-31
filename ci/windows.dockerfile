@@ -26,6 +26,3 @@ RUN powershell.exe -Command \
     $ErrorActionPreference = 'Stop'; \
     pip install -U pip pytest
 
-RUN powershell.exe -Command \
-    $ErrorActionPreference = 'Stop'; \
-    pip install -U pip raet BitVector

@@ -44,7 +44,7 @@ setup(
         '': ['*.txt', '*.md', '*.rst', '*.json', '*.conf', '*.html',
              '*.css', '*.ico', '*.png', 'LICENSE', 'LEGAL']},
     include_package_data=True,
-    install_requires=['portalocker==0.5.7', 'test', 'pyzmq', 'raet', 'ioflo==1.5.4'],
+    install_requires=['portalocker==0.5.7', 'pyzmq', 'raet', 'ioflo==1.5.4'],
     setup_requires=['pytest-runner'],
     tests_require=['pytest'],
     scripts=[],
