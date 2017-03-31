@@ -129,7 +129,7 @@ class Remote:
     @property
     def hasLostConnection(self):
         if self.socket is None:
-            logger.warn('Remote {} already disconnected'.format(self))
+            logger.warning('Remote {} already disconnected'.format(self))
             return False
 
         monitor = self.socket.get_monitor_socket()
@@ -276,7 +276,7 @@ class ZStack(NetworkInterface):
             self.remotesByKeys.pop(pkey, None)
             self.verifiers.pop(vkey, None)
         else:
-            logger.warn('No remote named {} present')
+            logger.warning('No remote named {} present')
 
     @staticmethod
     def initLocalKeys(name, baseDir, sigseed, override=False):
@@ -470,7 +470,7 @@ class ZStack(NetworkInterface):
 
         self._remotes = {}
         if self.remotesByKeys:
-            logger.warn('{} found remotes that were only in remotesByKeys and '
+            logger.warning('{} found remotes that were only in remotesByKeys and '
                         'not in remotes. This is suspicious')
             for r in self.remotesByKeys.values():
                 r.disconnect()
@@ -718,7 +718,7 @@ class ZStack(NetworkInterface):
                 self.remotes[nm].disconnect()
                 return self.remotes[nm]
         else:
-            logger.warn('{} did not find any remote by name {} to disconnect'.
+            logger.warning('{} did not find any remote by name {} to disconnect'.
                         format(self, name))
 
     def addRemote(self, name, ha, remoteVerkey, remotePublicKey):
@@ -742,13 +742,13 @@ class ZStack(NetworkInterface):
         elif r is False:
             # TODO: This fails the first time as socket is not established,
             # need to make it retriable
-            logger.warn('{} failed to ping {} at {}'.
+            logger.warning('{} failed to ping {} at {}'.
                         format(self.name, remote.name, remote.ha),
                         extra={"cli": False})
         elif r is None:
             logger.debug('{} will be sending in batch'.format(self))
         else:
-            logger.warn('{} got an unexpected return value {} while sending'.
+            logger.warning('{} got an unexpected return value {} while sending'.
                         format(self, r))
         return r
 
@@ -780,7 +780,7 @@ class ZStack(NetworkInterface):
                 logger.debug('{} could not transmit message to {}'.format(self, uid))
                 return False
         else:
-            logger.warn('{} has uninitialised socket for remote {}'.
+            logger.warning('{} has uninitialised socket for remote {}'.
                         format(self, self.remotes[uid]))
             return False
 
