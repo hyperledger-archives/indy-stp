@@ -152,7 +152,6 @@ class NetworkInterface:
         """
         pass
 
-
     def isConnectedTo(self, name: str = None, ha: HA = None):
         try:
             remote = self.getRemote(name, ha)
