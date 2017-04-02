@@ -91,8 +91,7 @@ class Remote:
                 self.socket.monitor(None, 0)
                 self.socket._monitor_socket = None
                 # self.socket.disable_monitor()
-            self.socket.linger = 0
-            self.socket.close()
+            self.socket.close(linger=0)
             self.socket = None
         else:
             logger.debug('{} close was closed on a null socket, maybe close is '
@@ -432,9 +431,8 @@ class ZStack(NetworkInterface):
             'tcp://*:{}'.format(self.ha[1]))
 
     def close(self):
-        self.listener.linger = 0
         self.listener.unbind(self.listener.LAST_ENDPOINT)
-        self.listener.close()
+        self.listener.close(linger=0)
         self.listener = None
         logger.debug('{} starting to disconnect remotes'.format(self))
         for r in self.remotes.values():
