@@ -2,42 +2,36 @@ import inspect
 import logging
 import os
 import sys
-
 from ioflo.base.consoling import getConsole, Console
 from stp_core.common.logging.TimeAndSizeRotatingFileHandler import TimeAndSizeRotatingFileHandler
 from stp_core.common.util import Singleton
-from stp_core.util import getConfig
+from stp_core.common.logging.handlers import CliHandler
 
 TRACE_LOG_LEVEL = 5
 DISPLAY_LOG_LEVEL = 25
 
-# TODO: move it to plenum-util repo
+# TODO: move it to plenum-utils
+
+
+class CustomAdapter(logging.LoggerAdapter):
+    def trace(self, msg, *args, **kwargs):
+        self.log(TRACE_LOG_LEVEL, msg, *args, **kwargs)
+
+    def display(self, msg, *args, **kwargs):
+        self.log(DISPLAY_LOG_LEVEL, msg, *args, **kwargs)
 
 
 def getlogger(name: object = None) -> object:
     return Logger().getlogger(name)
 
 
-class TestingHandler(logging.Handler):
-    def __init__(self, tester):
-        """
-        Initialize the handler.
-        """
-        super().__init__()
-        self.tester = tester
-
-    def emit(self, record):
-        """
-        Captures a record.
-        """
-        self.tester(record)
-
-
 class Logger(metaclass=Singleton):
     def __init__(self, config=None):
+        from plenum.common.config_util import getConfig
         # TODO: This should take directory
         self._config = config or getConfig()
         self._addTraceToLogging()
+        self._addDisplayToLogging()
 
         self._handlers = {}
         self._format = logging.Formatter(fmt=self._config.logFormat,
@@ -51,9 +45,13 @@ class Logger(metaclass=Singleton):
         self._default_raet_log_file = \
             getRAETLogFilePath("RAETLogFilePath", self._config)
 
-        self.enableStdLogging()
+        if self._config.enableStdOutLogging:
+            self.enableStdLogging()
 
-        self.setLogLevel(TRACE_LOG_LEVEL)
+        logLevel = logging.INFO
+        if hasattr(self._config, "logLevel"):
+            logLevel = self._config.logLevel
+        self.setLogLevel(logLevel)
 
     @staticmethod
     def getlogger(name=None):
@@ -88,6 +86,12 @@ class Logger(metaclass=Singleton):
                                'when CLI logging is enabled')
         new = logging.StreamHandler(sys.stdout)
         self._setHandler('std', new)
+
+    def enableCliLogging(self, callback, override_tags=None):
+        h = CliHandler(callback, override_tags)
+        self._setHandler('cli', h)
+        # assumption is there's never a need to have std logging when in CLI
+        self._clearHandler('std')
 
     def enableFileLogging(self, filename):
         d = os.path.dirname(filename)
@@ -127,6 +131,16 @@ class Logger(metaclass=Singleton):
 
         logging.Logger.trace = trace
 
+    @staticmethod
+    def _addDisplayToLogging():
+        logging.addLevelName(DISPLAY_LOG_LEVEL, "DISPLAY")
+
+        def display(self, message, *args, **kwargs):
+            if self.isEnabledFor(DISPLAY_LOG_LEVEL):
+                self._log(DISPLAY_LOG_LEVEL, message, args, **kwargs)
+
+        logging.Logger.display = display
+
 
 def getRAETLogLevelFromConfig(paramName, defaultValue, config):
     try:
@@ -145,5 +159,3 @@ def getRAETLogFilePath(paramName, config):
     except AttributeError:
         filePath = None
     return filePath
-
-
