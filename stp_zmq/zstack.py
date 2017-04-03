@@ -72,7 +72,8 @@ class Remote:
         sock.curve_serverkey = self.publicKey
         sock.identity = localPubKey
         # sock.setsockopt(test.PROBE_ROUTER, 1)
-
+        sock.setsockopt(zmq.TCP_KEEPALIVE, 1)
+        sock.setsockopt(zmq.TCP_KEEPALIVE_INTVL, 1000)
         addr = 'tcp://{}:{}'.format(*self.ha)
         sock.connect(addr)
         self.socket = sock
@@ -427,6 +428,8 @@ class ZStack(NetworkInterface):
         self.listener.curve_server = True
         self.listener.identity = self.publicKey
         logger.debug('{} will bind its listener at {}'.format(self, self.ha[1]))
+        self.listener.setsockopt(zmq.TCP_KEEPALIVE, 1)
+        self.listener.setsockopt(zmq.TCP_KEEPALIVE_INTVL, 1000)
         self.listener.bind(
             'tcp://*:{}'.format(self.ha[1]))
 
