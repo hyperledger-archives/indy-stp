@@ -16,3 +16,5 @@ RAETLogLevelCli = "mute"
 RAETLogFilePath = os.path.join(os.path.expanduser(baseDir), "test.log")
 RAETLogFilePathCli = None
 RAETMessageTimeout = 60
+
+enableStdOutLogging = True

@@ -64,3 +64,8 @@ target/
 # PyCharm
 .idea/
 
+# hidden files
+.*
+
+# tmp files
+*~
