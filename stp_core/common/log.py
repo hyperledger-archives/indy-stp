@@ -6,6 +6,7 @@ from ioflo.base.consoling import getConsole, Console
 from stp_core.common.logging.TimeAndSizeRotatingFileHandler import TimeAndSizeRotatingFileHandler
 from stp_core.common.util import Singleton
 from stp_core.common.logging.handlers import CliHandler
+from stp_core.common.config.util import getConfig
 
 TRACE_LOG_LEVEL = 5
 DISPLAY_LOG_LEVEL = 25
@@ -27,7 +28,7 @@ def getlogger(name: object = None) -> object:
 
 class Logger(metaclass=Singleton):
     def __init__(self, config=None):
-        from plenum.common.config_util import getConfig
+
         # TODO: This should take directory
         self._config = config or getConfig()
         self._addTraceToLogging()
