@@ -31,6 +31,34 @@ class SignedMessage(bytes):
         return self._message
 
 
+class EncryptedMessage(bytes):
+    """
+    A bytes subclass that holds a messaged that has been encrypted by a
+    :class:`SecretBox`.
+    """
+
+    @classmethod
+    def _from_parts(cls, nonce, ciphertext, combined):
+        obj = cls(combined)
+        obj._nonce = nonce
+        obj._ciphertext = ciphertext
+        return obj
+
+    @property
+    def nonce(self):
+        """
+        The nonce used during the encryption of the :class:`EncryptedMessage`.
+        """
+        return self._nonce
+
+    @property
+    def ciphertext(self):
+        """
+        The ciphertext contained within the :class:`EncryptedMessage`.
+        """
+        return self._ciphertext
+
+
 class VerifyKey(encoding.Encodable):
     """
     The public key counterpart to an Ed25519 SigningKey for producing digital

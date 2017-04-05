@@ -55,7 +55,7 @@ class Remote:
         # TODO: A stack should have a monitor and it should identify remote
         # by endpoint
         # Helps to see if socket got disconnected
-        self.monitorSock = None
+        # self.monitorSock = None
 
         self.isConnected = False
         # Currently keeping uid field to resemble RAET RemoteEstate
@@ -72,13 +72,8 @@ class Remote:
         sock.curve_serverkey = self.publicKey
         sock.identity = localPubKey
         # sock.setsockopt(test.PROBE_ROUTER, 1)
-
-        # monitorLoc = 'inproc://monitor.{}{}'.format(self.uid, randomString(10))
-        # monitorSock = context.socket(test.PAIR)
-        # monitorSock.connect(monitorLoc)
-        # monitorSock.linger = 0
-        # sock.monitor(monitorLoc, test.EVENT_ALL)
-
+        sock.setsockopt(zmq.TCP_KEEPALIVE, 1)
+        sock.setsockopt(zmq.TCP_KEEPALIVE_INTVL, 1000)
         addr = 'tcp://{}:{}'.format(*self.ha)
         sock.connect(addr)
         self.socket = sock
@@ -90,39 +85,18 @@ class Remote:
         if self.socket:
             logger.trace('disconnecting socket {} {}'.
                          format(self.socket.FD, self.socket.underlying))
-            # Do not close self.monitorSock before disabling monitor as
-            # this will freeze the code
-            # logger.debug('{} has monitor, {}:{}:{}'.
-            #              format(self, self.socket._monitor_socket.FD,
-            #                     self.socket._monitor_socket.LAST_ENDPOINT,
-            #                     self.socket._monitor_socket.closed))
-            # disable_monitor has its operations in reverse order so doing
-            # them manually in the correct order
-            # self.socket.disable_monitor()
-            # m = self.socket.get_monitor_socket()
-            # m.linger = 0
-
-            # if self.socket._monitor_socket:
-            #     self.socket._monitor_socket.linger = 0
-            #     self.socket._monitor_socket.close()
 
             if self.socket._monitor_socket:
                 logger.trace('{} closing monitor socket'.format(self))
                 self.socket._monitor_socket.linger = 0
                 self.socket.monitor(None, 0)
                 self.socket._monitor_socket = None
-            # logger.debug('{} 111'.format(self))
-            self.socket.linger = 0
-            self.socket.close()
-            # logger.debug('{} 222'.format(self))
+                # self.socket.disable_monitor()
+            self.socket.close(linger=0)
             self.socket = None
         else:
             logger.debug('{} close was closed on a null socket, maybe close is '
                          'being called twice.'.format(self))
-
-        # if self.monitorSock:
-        #     self.monitorSock.close()
-        #     self.monitorSock = None
 
         self.isConnected = False
 
@@ -304,7 +278,6 @@ class ZStack(NetworkInterface):
         shutil.rmtree(eDir)
         return hexlify(public_key).decode(), hexlify(verif_key).decode()
 
-
     @staticmethod
     def initRemoteKeys(name, remoteName, baseDir, verkey, override=False):
         homeDir = ZStack.homeDirPath(baseDir, name)
@@ -455,13 +428,14 @@ class ZStack(NetworkInterface):
         self.listener.curve_server = True
         self.listener.identity = self.publicKey
         logger.debug('{} will bind its listener at {}'.format(self, self.ha[1]))
+        self.listener.setsockopt(zmq.TCP_KEEPALIVE, 1)
+        self.listener.setsockopt(zmq.TCP_KEEPALIVE_INTVL, 1000)
         self.listener.bind(
             'tcp://*:{}'.format(self.ha[1]))
 
     def close(self):
-        self.listener.linger = 0
         self.listener.unbind(self.listener.LAST_ENDPOINT)
-        self.listener.close()
+        self.listener.close(linger=0)
         self.listener = None
         logger.debug('{} starting to disconnect remotes'.format(self))
         for r in self.remotes.values():
@@ -616,7 +590,6 @@ class ZStack(NetworkInterface):
         self._receiveFromListener(quota=self.listenerQuota)
         self._receiveFromRemotes(quotaPerRemote=self.remoteQuota)
         return len(self.rxMsgs)
-
 
     def processReceived(self, limit):
 

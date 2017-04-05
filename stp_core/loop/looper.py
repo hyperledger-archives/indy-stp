@@ -4,7 +4,7 @@ import signal
 import sys
 import time
 from asyncio import Task
-from typing import List
+from typing import List, Optional
 from collections import deque
 
 # import uvloop
@@ -166,7 +166,7 @@ class Looper:
         if self.autoStart:
             prodable.start(self.loop)
 
-    def removeProdable(self, prodable: Prodable=None, name: str=None) -> None:
+    def removeProdable(self, prodable: Prodable=None, name: str=None) -> Optional[Prodable]:
         """
         Remove the specified Prodable object from this Looper's list of Prodables
 
@@ -174,6 +174,7 @@ class Looper:
         """
         if prodable:
             self.prodables.remove(prodable)
+            return prodable
         elif name:
             for p in self.prodables:
                 if hasattr(p, "name") and getattr(p, "name") == name:
@@ -181,13 +182,14 @@ class Looper:
                     break
             if prodable:
                 self.prodables.remove(prodable)
+                return prodable
             else:
                 logger.warning("Trying to remove a prodable {} which is not present"
                             .format(prodable))
         else:
             logger.error("Provide a prodable object or a prodable name")
 
-    def hasProdable(self, prodable: Prodable=None, name: str=None):
+    def hasProdable(self, prodable: Prodable=None, name: str=None) -> bool:
         assert lxor(prodable, name), \
             "One and only one of prodable or name must be provided"
 
