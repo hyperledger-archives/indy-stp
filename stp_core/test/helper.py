@@ -2,7 +2,6 @@ import os
 
 import logging
 
-from stp_core.common.log import getlogger
 from stp_core.loop.motor import Motor
 from stp_core.network.keep_in_touch import KITNetworkInterface
 
@@ -61,13 +60,12 @@ def connectStacks(stacks, useKeys=True):
         for otherStack in stacks:
             if stack != otherStack:
                 stack.connect(name=otherStack.name, ha=otherStack.ha,
-                              verKey=otherStack.verKey if useKeys else None,
-                              publicKey=otherStack.publicKey if useKeys else None)
+                              verKeyRaw=otherStack.verKeyRaw if useKeys else None,
+                              publicKeyRaw=otherStack.publicKeyRaw if useKeys else None)
 
 
 def checkStacksConnected(stacks):
     for stack in stacks:
         for otherStack in stacks:
             if stack != otherStack:
-                assert otherStack.name in stack.connecteds
-                assert stack.name in otherStack.connecteds
+                assert stack.isConnectedTo(otherStack.name)

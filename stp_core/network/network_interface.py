@@ -25,6 +25,11 @@ class NetworkInterface:
     def created(self):
         pass
 
+    @property
+    @abstractmethod
+    def name(self):
+        pass
+
     @staticmethod
     @abstractmethod
     def isRemoteConnected(r) -> bool:
@@ -41,12 +46,22 @@ class NetworkInterface:
         raise NotImplementedError
 
     @staticmethod
+    @abstractmethod
     def initRemoteKeys(name, remoteName, baseDir, verkey, override=False):
+        raise NotImplementedError
+
+    @abstractmethod
+    def onHostAddressChanged(self):
         raise NotImplementedError
 
     @staticmethod
     @abstractmethod
     def areKeysSetup(name, baseDir):
+        raise NotImplementedError
+
+    @staticmethod
+    @abstractmethod
+    def learnKeysFromOther(baseDir, name, other):
         raise NotImplementedError
 
     @abstractmethod
@@ -66,15 +81,18 @@ class NetworkInterface:
         raise NotImplementedError
 
     @abstractmethod
-    def connect(self, name=None, remoteId=None, ha=None, verKey=None, publicKey=None):
+    def connect(self, name=None, remoteId=None, ha=None, verKeyRaw=None, publicKeyRaw=None):
         raise NotImplementedError
 
-    @property
-    def age(self):
-        """
-        Returns the time elapsed since this stack was created
-        """
-        return time.perf_counter() - self.created
+    @abstractmethod
+    def send(self, msg, remote: str = None, ha=None):
+        raise NotImplementedError
+
+    def connectIfNotConnected(self, name=None, remoteId=None, ha=None, verKeyRaw=None, publicKeyRaw=None):
+        if not self.isConnectedTo(name=name, ha=ha):
+            self.connect(name=name, remoteId=remoteId, ha=ha, verKeyRaw=verKeyRaw, publicKeyRaw=publicKeyRaw)
+        else:
+            logger.debug('{} already connected {}'.format(self.name, ha))
 
     # TODO: Does this serve the same purpose as `conns`, if yes then remove
     @property
@@ -86,71 +104,12 @@ class NetworkInterface:
                 if self.isRemoteConnected(r)}
 
     @property
-    def conns(self) -> Set[str]:
+    def age(self):
         """
-        Get connections of this node which participate in the communication
+        Returns the time elapsed since this stack was created
+        """
+        return time.perf_counter() - self.created
 
-        :return: set of names of the connected nodes
-        """
-        return self._conns
-
-    @conns.setter
-    def conns(self, value: Set[str]) -> None:
-        """
-        Updates the connection count of this node if not already done.
-        """
-        if not self._conns == value:
-            old = self._conns
-            self._conns = value
-            ins = value - old
-            outs = old - value
-            logger.debug("{}'s connections changed from {} to {}".format(self,
-                                                                         old,
-                                                                         value))
-            self._connsChanged(ins, outs)
-
-    def checkConns(self):
-        """
-        Evaluate the connected nodes
-        """
-        self.conns = self.connecteds
-
-    def _connsChanged(self, ins: Set[str], outs: Set[str]) -> None:
-        """
-        A series of operations to perform once a connection count has changed.
-
-        - Set f to max number of failures this system can handle.
-        - Set status to one of started, started_hungry or starting depending on
-            the number of protocol instances.
-        - Check protocol instances. See `checkProtocolInstaces()`
-
-        :param ins: new nodes connected
-        :param outs: nodes no longer connected
-        """
-        for o in outs:
-            logger.info("{} disconnected from {}".format(self, o),
-                        extra={"cli": "IMPORTANT",
-                               "tags": ["connected"]})
-        for i in ins:
-            logger.info("{} now connected to {}".format(self, i),
-                        extra={"cli": "IMPORTANT",
-                               "tags": ["connected"]})
-
-            # remove remotes for same ha when a connection is made
-            remote = self.getRemote(i)
-            others = [r for r in self.remotes.values()
-                      if r.ha == remote.ha and r.name != i]
-            for o in others:
-                logger.debug("{} removing other remote".format(self))
-                self.removeRemote(o)
-
-        self.onConnsChanged(ins, outs)
-
-    def onConnsChanged(self, ins: Set[str], outs: Set[str]):
-        """
-        Subclasses can override
-        """
-        pass
 
     def isConnectedTo(self, name: str = None, ha: HA = None):
         try:
@@ -158,6 +117,7 @@ class NetworkInterface:
         except RemoteNotFound:
             return False
         return self.isRemoteConnected(remote)
+
 
     def getRemote(self, name: str = None, ha: HA = None):
         """
@@ -242,3 +202,4 @@ class NetworkInterface:
             array = conns if self.isRemoteConnected(r) else disconns
             array.append(r)
         return conns, disconns
+
