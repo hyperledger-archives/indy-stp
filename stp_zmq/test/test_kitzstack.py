@@ -1,6 +1,7 @@
 from copy import copy
 
 from stp_core.loop.eventually import eventually
+from stp_core.network.auth_mode import AuthMode
 from stp_core.test.helper import Printer, prepStacks, \
     checkStacksConnected
 from stp_zmq.test.helper import genKeys
@@ -12,7 +13,7 @@ def testKitZStacksConnected(registry, tdir, looper):
     stacks = []
     for name, ha in registry.items():
         printer = Printer(name)
-        stackParams = dict(name=name, ha=ha, basedirpath=tdir, auto=0)
+        stackParams = dict(name=name, ha=ha, basedirpath=tdir, auth_mode=AuthMode.RESTRICTED.value)
         reg = copy(registry)
         reg.pop(name)
         stack = KITZStack(stackParams, printer.print, reg)

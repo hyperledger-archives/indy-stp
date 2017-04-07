@@ -14,6 +14,7 @@ from typing import Set
 import zmq.auth
 from stp_core.crypto.nacl_wrappers import Signer, Verifier
 from stp_core.crypto.util import isHex, ed25519PkToCurve25519
+from stp_core.network.auth_mode import AuthMode
 from stp_core.network.exceptions import PublicKeyNotFoundOnDisk, VerKeyNotFoundOnDisk
 from stp_core.network.keep_in_touch import KITNetworkInterface
 from stp_zmq.authenticator import MultiZapAuthenticator
@@ -1023,9 +1024,8 @@ class SimpleZStack(ZStack):
         ha = stackParams['ha']
         basedirpath = stackParams['basedirpath']
 
-        # TODO: Change after removing test
-        auto = stackParams['auto']
-        restricted = True if auto == 0 else False
+        auto = stackParams.pop('auth_mode', None)
+        restricted = False if auto == AuthMode.ALLOW_ANY.value else True
 
         super().__init__(name, ha, basedirpath, msgHandler=self.msgHandler,
                          restricted=restricted, seed=seed,
