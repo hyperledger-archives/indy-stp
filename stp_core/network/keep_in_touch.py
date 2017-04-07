@@ -1,11 +1,12 @@
 from abc import abstractmethod
 from typing import Dict, Set
 
-import time
-from stp_core.network.network_interface import NetworkInterface
+
+from stp_core.common.log import getlogger
 from stp_core.ratchet import Ratchet
 from stp_core.types import HA
 
+logger = getlogger()
 
 class KITNetworkInterface:
     # Keep In Touch Stack which maintains connections mentioned in
@@ -41,6 +42,75 @@ class KITNetworkInterface:
         """
         self.checkConns()
         self.maintainConnections()
+
+    @property
+    def conns(self) -> Set[str]:
+        """
+        Get connections of this node which participate in the communication
+
+        :return: set of names of the connected nodes
+        """
+        return self._conns
+
+    @conns.setter
+    def conns(self, value: Set[str]) -> None:
+        """
+        Updates the connection count of this node if not already done.
+        """
+        if not self._conns == value:
+            old = self._conns
+            self._conns = value
+            ins = value - old
+            outs = old - value
+            logger.debug("{}'s connections changed from {} to {}".format(self,
+                                                                         old,
+                                                                         value))
+            self._connsChanged(ins, outs)
+
+    def checkConns(self):
+        """
+        Evaluate the connected nodes
+        """
+        self.conns = self.connecteds
+
+    def _connsChanged(self, ins: Set[str], outs: Set[str]) -> None:
+        """
+        A series of operations to perform once a connection count has changed.
+
+        - Set f to max number of failures this system can handle.
+        - Set status to one of started, started_hungry or starting depending on
+            the number of protocol instances.
+        - Check protocol instances. See `checkProtocolInstaces()`
+
+        :param ins: new nodes connected
+        :param outs: nodes no longer connected
+        """
+        for o in outs:
+            logger.info("{} disconnected from {}".format(self, o),
+                        extra={"cli": "IMPORTANT",
+                               "tags": ["connected"]})
+        for i in ins:
+            logger.info("{} now connected to {}".format(self, i),
+                        extra={"cli": "IMPORTANT",
+                               "tags": ["connected"]})
+
+            # remove remotes for same ha when a connection is made
+            remote = self.getRemote(i)
+            others = [r for r in self.remotes.values()
+                      if r.ha == remote.ha and r.name != i]
+            for o in others:
+                logger.debug("{} removing other remote".format(self))
+                self.removeRemote(o)
+
+        self.onConnsChanged(ins, outs)
+
+
+    def onConnsChanged(self, ins: Set[str], outs: Set[str]):
+        """
+        Subclasses can override
+        """
+        pass
+
 
     def findInNodeRegByHA(self, remoteHa):
         """
