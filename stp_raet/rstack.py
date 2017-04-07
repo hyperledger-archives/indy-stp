@@ -21,7 +21,7 @@ from stp_core.network.keep_in_touch import KITNetworkInterface
 from stp_core.network.network_interface import NetworkInterface
 from stp_core.network.util import checkPortAvailable, distributedConnectionMap
 from stp_core.types import HA
-from stp_raet.util import getLocalKeep
+from stp_raet.util import getLocalKeep, getLocalEstateData
 
 logger = getlogger()
 
@@ -84,6 +84,10 @@ class RStack(NetworkInterface):
     @property
     def created(self):
         return self._created
+
+    @property
+    def rxMsgs(self):
+        return self.raetStack.rxMsgs
 
     @staticmethod
     def isRemoteConnected(r) -> bool:
@@ -179,7 +183,16 @@ class RStack(NetworkInterface):
         return True
 
     @staticmethod
-    def learnKeysFromOther(baseDir, name, other):
+    def learnKeysFromOthers(baseDir, name, others):
+        pass
+
+    @staticmethod
+    def getHaFromLocal(name, basedirpath):
+        localEstate = getLocalEstateData(name, basedirpath)
+        if localEstate:
+            return localEstate.get("ha")
+
+    def tellKeysToOthers(self, others):
         pass
 
     def getRemote(self, name: str = None, ha: HA = None):

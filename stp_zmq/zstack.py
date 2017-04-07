@@ -14,6 +14,7 @@ from typing import Set
 import zmq.auth
 from stp_core.crypto.nacl_wrappers import Signer, Verifier
 from stp_core.crypto.util import isHex, ed25519PkToCurve25519
+from stp_core.network.exceptions import PublicKeyNotFoundOnDisk, VerKeyNotFoundOnDisk
 from stp_core.network.keep_in_touch import KITNetworkInterface
 from stp_zmq.authenticator import MultiZapAuthenticator
 from zmq.utils import z85
@@ -321,6 +322,10 @@ class ZStack(NetworkInterface):
         return ZStack.PublicKeyDirName, ZStack.PrivateKeyDirName, \
                ZStack.VerifKeyDirName, ZStack.SigKeyDirName
 
+    @staticmethod
+    def getHaFromLocal(name, basedirpath):
+        return None
+
     def __repr__(self):
         return self.name
 
@@ -345,15 +350,21 @@ class ZStack(NetworkInterface):
         return os.path.join(homeDirPath, ZStack.SigKeyDirName)
 
     @staticmethod
-    def learnKeysFromOther(baseDir, name, other):
+    def learnKeysFromOthers(baseDir, name, others):
         homeDir = ZStack.homeDirPath(baseDir, name)
         verifDirPath = ZStack.verifDirPath(homeDir)
         pubDirPath = ZStack.publicDirPath(homeDir)
         for d in (homeDir, verifDirPath, pubDirPath):
             os.makedirs(d, exist_ok=True)
 
-        createCertsFromKeys(verifDirPath, other.name, other.verKey)
-        createCertsFromKeys(pubDirPath, other.name, other.publicKey)
+        for other in others:
+            createCertsFromKeys(verifDirPath, other.name, other.verKey)
+            createCertsFromKeys(pubDirPath, other.name, other.publicKey)
+
+    def tellKeysToOthers(self, others):
+        for other in others:
+            createCertsFromKeys(other.verifKeyDir, self.name, self.verKey)
+            createCertsFromKeys(other.publicKeysDir, self.name, self.publicKey)
 
     def setupDirs(self):
         self.homeDir = self.homeDirPath(self.basedirpath, self.name)
@@ -664,22 +675,22 @@ class ZStack(NetworkInterface):
         if not name:
             raise ValueError('Name needs to be specified')
         if name not in self.remotes:
+            publicKey = None
             if not publicKeyRaw:
                 try:
                     publicKey = self.getPublicKey(name)
                 except KeyError:
-                    logger.error("{} could not get {}'s public key from disk"
-                                 .format(self, name))
+                    raise PublicKeyNotFoundOnDisk(self.name, name)
             else:
                 publicKey = z85.encode(publicKeyRaw)
 
+            verKey = None
             if not verKeyRaw:
                 try:
                     verKey = self.getVerKey(name)
                 except KeyError:
                     if self.isRestricted:
-                        logger.error("Could not get {}'s verification key "
-                                     "from disk".format(name))
+                        raise VerKeyNotFoundOnDisk(self.name, name)
             else:
                 verKey = z85.encode(verKeyRaw)
 

@@ -61,7 +61,16 @@ class NetworkInterface:
 
     @staticmethod
     @abstractmethod
-    def learnKeysFromOther(baseDir, name, other):
+    def learnKeysFromOthers(baseDir, name, others):
+        raise NotImplementedError
+
+    @abstractmethod
+    def tellKeysToOthers(self, others):
+        raise NotImplementedError
+
+    @staticmethod
+    @abstractmethod
+    def getHaFromLocal(name, basedirpath):
         raise NotImplementedError
 
     @abstractmethod
