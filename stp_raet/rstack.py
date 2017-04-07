@@ -17,6 +17,7 @@ from stp_core.crypto.nacl_wrappers import Signer
 
 from stp_core.crypto.util import ed25519SkToCurve25519, \
     getEd25519AndCurve25519Keys, ed25519PkToCurve25519
+from stp_core.network.auth_mode import AuthMode
 from stp_core.network.keep_in_touch import KITNetworkInterface
 from stp_core.network.network_interface import NetworkInterface
 from stp_core.network.util import checkPortAvailable, distributedConnectionMap
@@ -40,6 +41,10 @@ class RStack(NetworkInterface):
     def __init__(self, *args, **kwargs):
         checkPortAvailable(kwargs['ha'])
         basedirpath = kwargs.get('basedirpath')
+
+        authMode = kwargs.pop('auth_mode', None)
+        kwargs['auto'] = self._getAuto(authMode)
+
         keep = RoadKeep(basedirpath=basedirpath,
                         stackname=kwargs['name'],
                         auto=kwargs.get('auto'),
@@ -69,6 +74,13 @@ class RStack(NetworkInterface):
         self.coro = None
 
         self._conns = set()  # type: Set[str]
+
+    def _getAuto(self, authMode):
+        if authMode == AuthMode.ALLOW_ANY.value:
+            return AutoMode.always
+        if authMode == AuthMode.RESTRICTED.value:
+            return AutoMode.never
+        return None
 
     def __repr__(self):
         return self.name
