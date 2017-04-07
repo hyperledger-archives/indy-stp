@@ -2,6 +2,13 @@ import logging
 import socket
 from collections import OrderedDict
 from typing import List
+
+import struct
+
+import errno
+
+from stp_core.error_codes import WS_SOCKET_BIND_ERROR_ALREADY_IN_USE, \
+    WS_SOCKET_BIND_ERROR_NOT_AVAILABLE
 from stp_core.network.exceptions import PortNotAvailable
 
 import itertools
@@ -20,12 +27,20 @@ def checkPortAvailable(ha):
         sock = socket.socket(socket.AF_INET, typ)
         try:
             sock.bind(ha)
-        except BaseException as ex:
-            logging.warning("Checked port availability for opening "
-                            "as {} but address was already in use: {}".
-                            format(typ, ha))
-            raise PortNotAvailable(ha.port)
+        except OSError as exc:
+            if exc.errno in [
+                errno.EADDRINUSE, errno.EADDRNOTAVAIL,
+                WS_SOCKET_BIND_ERROR_ALREADY_IN_USE,
+                WS_SOCKET_BIND_ERROR_NOT_AVAILABLE
+            ]:
+                raise PortNotAvailable(ha)
+            else:
+                raise exc
         finally:
+            l_onoff = 1
+            l_linger = 0
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
+                            struct.pack('ii', l_onoff, l_linger))
             sock.close()
 
 
