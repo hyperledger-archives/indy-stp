@@ -147,8 +147,12 @@ class Looper:
         limit = None
         s = 0
         for n in self.prodables:
+            cur_time = time.time()
             e = await n.prod(limit)
             if e > 0:
+                self._activity.appendleft((time.time(), e))
+            # we want to track an meaningful effort even if it reports no messages processed
+            elif time.time() - cur_time > 0.01:
                 self._activity.appendleft((time.time(), e))
             s += e
         return s
@@ -241,7 +245,7 @@ class Looper:
                     # no activity for the required time
                     return
                 else:
-                    # too busy, wait more
+                    # too busy, wait bit more
                     run_for = quiet_for - inactive_for
                     self.runFor(run_for)
                     continue
