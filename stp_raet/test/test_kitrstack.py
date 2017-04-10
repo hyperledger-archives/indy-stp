@@ -1,8 +1,8 @@
 from copy import copy
 
 import pytest
-from raet.raeting import AutoMode
 from stp_core.loop.eventually import eventually
+from stp_core.network.auth_mode import AuthMode
 from stp_raet.rstack import KITRStack
 from stp_core.test.helper import Printer, prepStacks, checkStacksConnected, chkPrinted
 
@@ -21,7 +21,7 @@ def stacks(registry, tdir, looper, printers):
         stackParams = {
             "name": name,
             "ha": ha,
-            "auto": AutoMode.always,
+            "auth_mode": AuthMode.ALLOW_ANY.value,
             "main": True,
             "mutable": "mutable",
             "messageTimeout": 30,
