@@ -1,5 +1,6 @@
 import inspect
-import json
+
+import ujson as json
 import os
 import shutil
 import sys
@@ -29,7 +30,6 @@ from stp_zmq.util import createEncAndSigKeys, \
 
 logger = getlogger()
 
-LINGER_TIME = 20
 DEFAULT_LISTENER_QUOTA = 100
 DEFAULT_REMOTE_QUOTA = 100
 
@@ -54,8 +54,6 @@ class Remote:
         self.socket = None
         # TODO: A stack should have a monitor and it should identify remote
         # by endpoint
-        # Helps to see if socket got disconnected
-        # self.monitorSock = None
 
         self.isConnected = False
         # Currently keeping uid field to resemble RAET RemoteEstate
@@ -354,8 +352,9 @@ class ZStack(NetworkInterface):
             assert not os.listdir(self.secretKeysDir)
             # Seed should be present
             assert self.seed, 'Keys are not setup for {}'.format(self)
-            logger.info("Signing and Encryption keys were not found. "
-                        "Creating them now", extra={"cli": False})
+            logger.info("Signing and Encryption keys were not found for {}. "
+                        "Creating them now".format(self),
+                        extra={"cli": False})
             tdirS = os.path.join(self.homeDir, '__skeys__')
             tdirE = os.path.join(self.homeDir, '__ekeys__')
             os.makedirs(tdirS, exist_ok=True)
@@ -523,12 +522,13 @@ class ZStack(NetworkInterface):
         return 0
 
     def _verifyAndAppend(self, msg, ident):
-        if self.verify(msg, ident):
-            self.rxMsgs.append((msg[:-self.sigLen].decode(), ident))
-        else:
-            logger.error('{} got error while '
-                         'verifying message {} from {}'
-                         .format(self, msg, ident))
+        # if self.verify(msg, ident):
+        #     self.rxMsgs.append((msg[:-self.sigLen].decode(), ident))
+        # else:
+        #     logger.error('{} got error while '
+        #                  'verifying message {} from {}'
+        #                  .format(self, msg, ident))
+        self.rxMsgs.append((msg.decode(), ident))
 
     def _receiveFromListener(self, quota) -> int:
         """
@@ -745,7 +745,8 @@ class ZStack(NetworkInterface):
             msg = self.prepMsg(msg)
             try:
                 # noinspection PyUnresolvedReferences
-                socket.send(self.signedMsg(msg), flags=zmq.NOBLOCK)
+                # socket.send(self.signedMsg(msg), flags=zmq.NOBLOCK)
+                socket.send(msg, flags=zmq.NOBLOCK)
                 logger.debug(
                     '{} transmitting message {} to {}'.format(self, msg, uid))
                 return True
@@ -769,8 +770,9 @@ class ZStack(NetworkInterface):
         msg = self.prepMsg(msg)
         try:
             # noinspection PyUnresolvedReferences
-            self.listener.send_multipart([ident, self.signedMsg(msg)],
-                                         flags=zmq.NOBLOCK)
+            # self.listener.send_multipart([ident, self.signedMsg(msg)],
+            #                              flags=zmq.NOBLOCK)
+            self.listener.send_multipart([ident, msg], flags=zmq.NOBLOCK)
             return True
         except zmq.Again:
             return False
@@ -788,8 +790,9 @@ class ZStack(NetworkInterface):
         return msg
 
     def signedMsg(self, msg: bytes, signer: Signer=None):
-        # Signing even if keysharing is ON since the other part
-        sig = self.signer.signature(msg)
+        # Just disabling signing for measuring how much is load testing impacted
+        # sig = self.signer.signature(msg)
+        sig = b'1111111111111111111111111111111111111111111111111111111111111111'
         return msg + sig
 
     def verify(self, msg, by):
