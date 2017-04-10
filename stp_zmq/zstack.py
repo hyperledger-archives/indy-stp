@@ -744,30 +744,30 @@ class ZStack(NetworkInterface):
                 return self.transmit(msg, remote)
 
     def transmit(self, msg, uid, timeout=None):
-        # Timeout is unused as of now
-        assert uid in self.remotes
-        remote = self.remotes[uid]
-        if not remote.isConnected:
-            logger.warning("Remote is not connected, "
-                           "message will not be sent immediately")
+        remote = self.remotes.get(uid)
+        if remote is None:
+            logger.error("Remote {} does not exist!".format(uid))
+            return False
         socket = remote.socket
-        if socket:
-            msg = self.prepMsg(msg)
-
-            try:
-                # noinspection PyUnresolvedReferences
-                x = socket.send(self.signedMsg(msg))
-                logger.info(
-                    '{} transmitting message {} to {}'.format(self, msg, uid))
-                return True
-            except zmq.Again as ex:
-
-                logger.info('{} could not transmit message to {}'.format(self, uid))
-                return False
-        else:
+        if not socket:
             logger.info('{} has uninitialised socket for remote {}'.
                         format(self, self.remotes[uid]))
             return False
+        try:
+            msg = self.prepMsg(msg)
+            socket.send(self.signedMsg(msg))
+            logger.info('{} transmitting message {} to {}'
+                        .format(self, msg, uid))
+            if not remote.isConnected:
+                logger.warning("Remote {} is not connected - "
+                               "message will not be sent immediately."
+                               "If this problem does not resolve itself - "
+                               "check your firewall settings".format(uid))
+            return True
+        except zmq.Again:
+            logger.info('{} could not transmit message to {}'
+                        .format(self, uid))
+        return False
 
     def transmitThroughListener(self, msg, ident):
         if isinstance(ident, str):
