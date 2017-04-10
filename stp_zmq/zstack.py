@@ -8,13 +8,15 @@ import time
 from abc import abstractmethod
 from binascii import hexlify, unhexlify
 from collections import deque
-from typing import Dict, Mapping, Callable, Tuple
+from typing import Dict, Mapping, Callable, Tuple, Any
 from typing import Set
 
 # import stp_zmq.asyncio
 import zmq.auth
 from stp_core.crypto.nacl_wrappers import Signer, Verifier
 from stp_core.crypto.util import isHex, ed25519PkToCurve25519
+from stp_core.network.auth_mode import AuthMode
+from stp_core.network.exceptions import PublicKeyNotFoundOnDisk, VerKeyNotFoundOnDisk
 from stp_core.network.keep_in_touch import KITNetworkInterface
 from stp_zmq.authenticator import MultiZapAuthenticator
 from zmq.utils import z85
@@ -178,8 +180,7 @@ class ZStack(NetworkInterface):
     def __init__(self, name, ha, basedirpath, msgHandler, restricted=True,
                  seed=None, onlyListener=False,
                  listenerQuota=DEFAULT_LISTENER_QUOTA, remoteQuota=DEFAULT_REMOTE_QUOTA):
-        # TODO, remove *args, **kwargs after removing test
-        self.name = name
+        self._name = name
         self.ha = ha
         self.basedirpath = basedirpath
         self.msgHandler = msgHandler
@@ -231,6 +232,11 @@ class ZStack(NetworkInterface):
     @property
     def created(self):
         return self._created
+
+    @property
+    @abstractmethod
+    def name(self):
+        return self._name
 
     @staticmethod
     def isRemoteConnected(r) -> bool:
@@ -291,6 +297,10 @@ class ZStack(NetworkInterface):
         public_key = ed25519PkToCurve25519(verkey)
         createCertsFromKeys(pubDirPath, remoteName, z85.encode(public_key))
 
+    def onHostAddressChanged(self):
+        # we don't store remote data like ip, port, domain name, etc, so nothing to do here
+        pass
+
     @staticmethod
     def areKeysSetup(name, baseDir):
         homeDir = ZStack.homeDirPath(baseDir, name)
@@ -310,6 +320,10 @@ class ZStack(NetworkInterface):
     def keyDirNames():
         return ZStack.PublicKeyDirName, ZStack.PrivateKeyDirName, \
                ZStack.VerifKeyDirName, ZStack.SigKeyDirName
+
+    @staticmethod
+    def getHaFromLocal(name, basedirpath):
+        return None
 
     def __repr__(self):
         return self.name
@@ -333,6 +347,23 @@ class ZStack(NetworkInterface):
     @staticmethod
     def sigDirPath(homeDirPath):
         return os.path.join(homeDirPath, ZStack.SigKeyDirName)
+
+    @staticmethod
+    def learnKeysFromOthers(baseDir, name, others):
+        homeDir = ZStack.homeDirPath(baseDir, name)
+        verifDirPath = ZStack.verifDirPath(homeDir)
+        pubDirPath = ZStack.publicDirPath(homeDir)
+        for d in (homeDir, verifDirPath, pubDirPath):
+            os.makedirs(d, exist_ok=True)
+
+        for other in others:
+            createCertsFromKeys(verifDirPath, other.name, other.verKey)
+            createCertsFromKeys(pubDirPath, other.name, other.publicKey)
+
+    def tellKeysToOthers(self, others):
+        for other in others:
+            createCertsFromKeys(other.verifKeyDir, self.name, self.verKey)
+            createCertsFromKeys(other.publicKeysDir, self.name, self.publicKey)
 
     def setupDirs(self):
         self.homeDir = self.homeDirPath(self.basedirpath, self.name)
@@ -638,26 +669,31 @@ class ZStack(NetworkInterface):
     def doProcessReceived(self, msg, frm, ident):
         return msg
 
-    def connect(self, name=None, remoteId=None, ha=None, verKey=None, publicKey=None):
+    def connect(self, name=None, remoteId=None, ha=None, verKeyRaw=None, publicKeyRaw=None):
         """
         Connect to the node specified by name.
         """
         if not name:
             raise ValueError('Name needs to be specified')
         if name not in self.remotes:
-            if not publicKey:
+            publicKey = None
+            if not publicKeyRaw:
                 try:
                     publicKey = self.getPublicKey(name)
                 except KeyError:
-                    logger.error("{} could not get {}'s public key from disk"
-                                 .format(self, name))
-            if not verKey:
+                    raise PublicKeyNotFoundOnDisk(self.name, name)
+            else:
+                publicKey = z85.encode(publicKeyRaw)
+
+            verKey = None
+            if not verKeyRaw:
                 try:
                     verKey = self.getVerKey(name)
                 except KeyError:
                     if self.isRestricted:
-                        logger.error("Could not get {}'s verification key "
-                                     "from disk".format(name))
+                        raise VerKeyNotFoundOnDisk(self.name, name)
+            else:
+                verKey = z85.encode(verKeyRaw)
 
             if not (ha and publicKey and (not self.isRestricted or verKey)):
                 raise ValueError('{} doesnt have enough info to connect. '
@@ -725,17 +761,17 @@ class ZStack(NetworkInterface):
                         format(self, r))
         return r
 
-    def send(self, msg, remote: str = None):
+    def send(self, msg: Any, remoteName: str = None, ha=None):
         if self.onlyListener:
-            return self.transmitThroughListener(msg, remote)
+            return self.transmitThroughListener(msg, remoteName)
         else:
-            if remote is None:
+            if remoteName is None:
                 r = []
                 for uid in self.remotes:
                     r.append(self.transmit(msg, uid))
                 return all(r)
             else:
-                return self.transmit(msg, remote)
+                return self.transmit(msg, remoteName)
 
     def transmit(self, msg, uid, timeout=None):
         # Timeout is unused as of now
@@ -828,6 +864,14 @@ class ZStack(NetworkInterface):
     def publicKey(self):
         return self.getPublicKey(self.name)
 
+    @property
+    def publicKeyRaw(self):
+        return z85.decode(self.publicKey)
+
+    @property
+    def pubhex(self):
+        return hexlify(z85.decode(self.publicKey))
+
     def getPublicKey(self, name):
         return self.loadPubKeyFromDisk(self.publicKeysDir, name)
 
@@ -835,12 +879,16 @@ class ZStack(NetworkInterface):
     def verKey(self):
         return self.getVerKey(self.name)
 
-    def getVerKey(self, name):
-        return self.loadPubKeyFromDisk(self.verifKeyDir, name)
+    @property
+    def verKeyRaw(self):
+        return z85.decode(self.verKey)
 
     @property
     def verhex(self):
         return hexlify(z85.decode(self.verKey))
+
+    def getVerKey(self, name):
+        return self.loadPubKeyFromDisk(self.verifKeyDir, name)
 
     @property
     def sigKey(self):
@@ -850,10 +898,6 @@ class ZStack(NetworkInterface):
     @property
     def keyhex(self):
         return hexlify(z85.decode(self.sigKey))
-
-    @property
-    def pubhex(self):
-        return hexlify(z85.decode(self.publicKey))
 
     @property
     def priKey(self):
@@ -983,9 +1027,8 @@ class SimpleZStack(ZStack):
         ha = stackParams['ha']
         basedirpath = stackParams['basedirpath']
 
-        # TODO: Change after removing test
-        auto = stackParams['auto']
-        restricted = True if auto == 0 else False
+        auto = stackParams.pop('auth_mode', None)
+        restricted = False if auto == AuthMode.ALLOW_ANY.value else True
 
         super().__init__(name, ha, basedirpath, msgHandler=self.msgHandler,
                          restricted=restricted, seed=seed,

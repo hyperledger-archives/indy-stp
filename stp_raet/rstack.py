@@ -3,9 +3,8 @@ import sys
 import time
 from collections import Callable
 from collections import OrderedDict
-from typing import Any, Set, Optional
+from typing import Any, Set
 from typing import Dict
-from typing import Tuple
 
 from raet.raeting import AutoMode, TrnsKind
 from raet.road.estating import RemoteEstate
@@ -18,12 +17,12 @@ from stp_core.crypto.nacl_wrappers import Signer
 
 from stp_core.crypto.util import ed25519SkToCurve25519, \
     getEd25519AndCurve25519Keys, ed25519PkToCurve25519
+from stp_core.network.auth_mode import AuthMode
 from stp_core.network.keep_in_touch import KITNetworkInterface
 from stp_core.network.network_interface import NetworkInterface
 from stp_core.network.util import checkPortAvailable, distributedConnectionMap
-from stp_core.ratchet import Ratchet
 from stp_core.types import HA
-from stp_raet.util import getLocalKeep
+from stp_raet.util import getLocalKeep, getLocalEstateData
 
 logger = getlogger()
 
@@ -40,9 +39,12 @@ Messenger.RedoTimeoutMax = 10.0
 
 class RStack(NetworkInterface):
     def __init__(self, *args, **kwargs):
-
         checkPortAvailable(kwargs['ha'])
         basedirpath = kwargs.get('basedirpath')
+
+        authMode = kwargs.pop('auth_mode', None)
+        kwargs['auto'] = self._getAuto(authMode)
+
         keep = RoadKeep(basedirpath=basedirpath,
                         stackname=kwargs['name'],
                         auto=kwargs.get('auto'),
@@ -73,6 +75,13 @@ class RStack(NetworkInterface):
 
         self._conns = set()  # type: Set[str]
 
+    def _getAuto(self, authMode):
+        if authMode == AuthMode.ALLOW_ANY.value:
+            return AutoMode.always
+        if authMode == AuthMode.RESTRICTED.value:
+            return AutoMode.never
+        return None
+
     def __repr__(self):
         return self.name
 
@@ -87,6 +96,10 @@ class RStack(NetworkInterface):
     @property
     def created(self):
         return self._created
+
+    @property
+    def rxMsgs(self):
+        return self.raetStack.rxMsgs
 
     @staticmethod
     def isRemoteConnected(r) -> bool:
@@ -159,6 +172,10 @@ class RStack(NetworkInterface):
         ])
         keep.dumpRemoteRoleData(data, role=remoteName)
 
+    def onHostAddressChanged(self):
+        logger.debug("{} clearing local data in keep as host address changed".
+                     format(self.name))
+        self.raetStack.keep.clearLocalData()
 
     @staticmethod
     def areKeysSetup(name, baseDir):
@@ -177,7 +194,31 @@ class RStack(NetworkInterface):
                 return False
         return True
 
-    def connect(self, name=None, ha=None, verKey=None, publicKey=None, remoteId=None):
+    @staticmethod
+    def learnKeysFromOthers(baseDir, name, others):
+        pass
+
+    @staticmethod
+    def getHaFromLocal(name, basedirpath):
+        localEstate = getLocalEstateData(name, basedirpath)
+        if localEstate:
+            return localEstate.get("ha")
+
+    def tellKeysToOthers(self, others):
+        pass
+
+    def getRemote(self, name: str = None, ha: HA = None):
+        """
+        Find the remote by name or ha.
+
+        :param name: the name of the remote to find
+        :param ha: host address pair the remote to find
+        :raises: RemoteNotFound
+        """
+        return self.findInRemotesByHA(ha) if ha else \
+            self.findInRemotesByName(name)
+
+    def connect(self, name=None, remoteId=None, ha=None, verKeyRaw=None, publicKeyRaw=None):
         """
         Connect to the node specified by name.
 
@@ -202,8 +243,7 @@ class RStack(NetworkInterface):
 
     def _doConnectByHA(self, ha, name=None):
         remote = RemoteEstate(stack=self.raetStack,
-                              ha=ha,
-                              name=name)
+                              ha=ha)
         self.raetStack.addRemote(remote)
         return self._doConnectRemote(remote, name)
 
@@ -362,14 +402,14 @@ class RStack(NetworkInterface):
     def prihex(self):
         return self.raetStack.local.priver.keyhex
 
-    def send(self, msg: Any, remoteName: str):
+    def send(self, msg: Any, remoteName: str, ha=None):
         """
         Transmit the specified message to the remote specified by `remoteName`.
 
         :param msg: a message
         :param remoteName: the name of the remote
         """
-        rid = self.getRemote(remoteName).uid
+        rid = self.getRemote(remoteName, ha).uid
         # Setting timeout to never expire
         self.raetStack.transmit(msg, rid, timeout=self.messageTimeout)
 
@@ -645,7 +685,7 @@ class KITRStack(SimpleRStack, KITNetworkInterface):
             self.connect(dname, remoteId=disconn.uid)
 
 
-    def connect(self, name=None, ha=None, verKey=None, publicKey=None, remoteId=None):
+    def connect(self, name=None, remoteId=None, ha=None, verKeyRaw=None, publicKeyRaw=None):
         """
         Connect to the node specified by name.
 

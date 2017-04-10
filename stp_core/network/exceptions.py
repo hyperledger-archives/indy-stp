@@ -39,3 +39,15 @@ class PortNotAvailable(OSError):
     def __init__(self, port):
         self.port = port
         super().__init__("port not available: {}".format(port))
+
+class PublicKeyNotFoundOnDisk(Exception):
+    def __init__(self, stackName, remoteName):
+        self.stackName = stackName
+        super().__init__("{} could not get {}'s public key from disk. Make sure the keys are initialized for this remote or provided explicitly."
+                                 .format(stackName, remoteName))
+
+class VerKeyNotFoundOnDisk(Exception):
+    def __init__(self, stackName, remoteName):
+        self.stackName = stackName
+        super().__init__("{} could not get {}'s verifiction key from disk. Make sure the keys are initialized for this remote or provided explicitly."
+                                 .format(stackName, remoteName))

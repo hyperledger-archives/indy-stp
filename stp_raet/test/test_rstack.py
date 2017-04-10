@@ -1,6 +1,5 @@
-from raet.raeting import AutoMode
-from stp_core.crypto.util import randomSeed
 from stp_core.loop.eventually import eventually
+from stp_core.network.auth_mode import AuthMode
 from stp_core.network.port_dispenser import genHa
 from stp_raet.rstack import SimpleRStack
 from stp_core.test.helper import Printer, chkPrinted, prepStacks, checkStacksConnected
@@ -14,7 +13,7 @@ def test2RStackCommunication(tdir, looper):
     stackParamsAlpha = {
         "name": names[0],
         "ha": genHa(),
-        "auto": AutoMode.always,
+        "auth_mode": AuthMode.ALLOW_ANY.value,
         "main": True,
         "mutable": "mutable",
         "messageTimeout": 30,
@@ -24,7 +23,7 @@ def test2RStackCommunication(tdir, looper):
         "name": names[1],
         "ha": genHa(),
         "main": True,
-        "auto": AutoMode.always,
+        "auth_mode": AuthMode.ALLOW_ANY.value,
         "mutable": "mutable",
         "messageTimeout": 30,
         "basedirpath" : tdir

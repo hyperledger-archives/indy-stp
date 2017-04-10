@@ -57,7 +57,7 @@ def testSimpleZStacksMsgs(tdir, looper):
     looper.add(bmotor)
 
     alpha.connect(name=beta.name, ha=beta.ha,
-                  verKey=beta.verKey, publicKey=beta.publicKey)
+                  verKeyRaw=beta.verKeyRaw, publicKeyRaw=beta.publicKeyRaw)
 
     looper.runFor(0.25)
     alpha.send({'greetings': 'hi'}, beta.name)
