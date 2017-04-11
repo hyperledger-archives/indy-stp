@@ -27,6 +27,11 @@ def checkPortAvailable(ha):
         sock = socket.socket(socket.AF_INET, typ)
         try:
             sock.bind(ha)
+            if typ == socket.SOCK_STREAM:
+                l_onoff = 1
+                l_linger = 0
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
+                                struct.pack('ii', l_onoff, l_linger))
         except OSError as exc:
             if exc.errno in [
                 errno.EADDRINUSE, errno.EADDRNOTAVAIL,
@@ -37,10 +42,6 @@ def checkPortAvailable(ha):
             else:
                 raise exc
         finally:
-            l_onoff = 1
-            l_linger = 0
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
-                            struct.pack('ii', l_onoff, l_linger))
             sock.close()
 
 
