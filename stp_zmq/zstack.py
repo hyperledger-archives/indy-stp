@@ -169,7 +169,7 @@ class Remote:
 class ZStack(NetworkInterface):
     # Assuming only one listener per stack for now.
 
-    MAX_SOCKETS = 16384
+    MAX_SOCKETS = 16384 if sys.platform != 'win32' else None
 
     PublicKeyDirName = 'public_keys'
     PrivateKeyDirName = 'private_keys'
@@ -432,7 +432,8 @@ class ZStack(NetworkInterface):
     def start(self, restricted=None, reSetupAuth=True):
         # self.ctx = test.asyncio.Context.instance()
         self.ctx = zmq.Context.instance()
-        self.ctx.MAX_SOCKETS = self.MAX_SOCKETS
+        if self.MAX_SOCKETS:
+            self.ctx.MAX_SOCKETS = self.MAX_SOCKETS
         restricted = self.restricted if restricted is None else restricted
         logger.info('{} starting with restricted as {} and reSetupAuth '
                     'as {}'.format(self, restricted, reSetupAuth),
@@ -795,11 +796,11 @@ class ZStack(NetworkInterface):
             socket.send(msg, flags=zmq.NOBLOCK)
             logger.info('{} transmitting message {} to {}'
                         .format(self, msg, uid))
-            if not remote.isConnected:
-                logger.warning('Remote {} is not connected - '
-                               'message will not be sent immediately.'
-                               'If this problem does not resolve itself - '
-                               'check your firewall settings'.format(uid))
+            # if not remote.isConnected:
+            #     logger.warning('Remote {} is not connected - '
+            #                    'message will not be sent immediately.'
+            #                    'If this problem does not resolve itself - '
+            #                    'check your firewall settings'.format(uid))
             return True
         except zmq.Again:
             logger.info('{} could not transmit message to {}'
