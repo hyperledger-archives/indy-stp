@@ -583,7 +583,7 @@ class ZStack(NetworkInterface):
                     # Router probing sends empty message on connection
                     continue
                 i += 1
-                if self.onlyListener and ident not in self.remotesByKeys:
+                if ident not in self.remotesByKeys:
                     self.peersWithoutRemotes.add(ident)
                 self._verifyAndAppend(msg, ident)
             except zmq.Again:
@@ -663,8 +663,21 @@ class ZStack(NetworkInterface):
         if msg in (self.pingMessage, self.pongMessage):
             if msg == self.pingMessage:
                 logger.info('{} got ping from {}'.format(self, frm))
-                self.send(self.pongMessage, frm)
-                logger.info('{} sent pong to {}'.format(self, frm))
+
+                ponged = False
+                if ident in self.remotesByKeys:
+                    # we already called connect and have a remote
+                    ponged = self.transmit(self.pongMessage, frm)
+                elif ident in self.peersWithoutRemotes:
+                    # we haven't yet called connect to this remote
+                    ponged = self.transmitThroughListener(self.pongMessage, ident)
+
+                if ponged:
+                    logger.info('{} sent pong to {}'.format(self, frm))
+                else:
+                    logger.info('{} failed to pong {}'.
+                                format(self.name, frm))
+
             if msg == self.pongMessage:
                 if ident in self.remotesByKeys:
                     self.remotesByKeys[ident].setConnected()
@@ -742,6 +755,8 @@ class ZStack(NetworkInterface):
         self.remotes[name] = remote
         # TODO: Use weakref to remote below instead
         self.remotesByKeys[remotePublicKey] = remote
+        if remotePublicKey in self.peersWithoutRemotes:
+            self.peersWithoutRemotes.remove(remotePublicKey)
         if remoteVerkey:
             self.addVerifier(remoteVerkey)
         else:
@@ -783,8 +798,6 @@ class ZStack(NetworkInterface):
     def transmit(self, msg, uid, timeout=None):
         remote = self.remotes.get(uid)
         if not remote:
-            remote = self.remotesByKeys.get(uid)
-        if not remote:
             logger.error("Remote {} does not exist!".format(uid))
             return False
         socket = remote.socket
@@ -817,7 +830,7 @@ class ZStack(NetworkInterface):
                         format(self, msg, ident))
             logger.debug("This is a temporary workaround for not being able to "
                         "disconnect a ROUTER's remote")
-            return
+            return False
         msg = self.prepMsg(msg)
         try:
             # noinspection PyUnresolvedReferences
@@ -1052,7 +1065,11 @@ class SimpleZStack(ZStack):
 
 
 class KITZStack(SimpleZStack, KITNetworkInterface):
-    # RStack which maintains connections mentioned in its registry
+    # ZStack which maintains connections mentioned in its registry
+
+    RETRY_TIMEOUT_NOT_RESTRICTED = 6
+    RETRY_TIMEOUT_RESTRICTED = 15
+
     def __init__(self, stackParams: dict, msgHandler: Callable,
                  registry: Dict[str, HA], seed=None, sighex: str = None,
                  listenerQuota=DEFAULT_LISTENER_QUOTA, remoteQuota=DEFAULT_REMOTE_QUOTA):
@@ -1068,7 +1085,8 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
         cur = time.perf_counter()
         if cur > self.nextCheck or force:
 
-            self.nextCheck = cur + (6 if self.isKeySharing else 15)
+            self.nextCheck = cur + (self.RETRY_TIMEOUT_NOT_RESTRICTED if self.isKeySharing
+                                    else self.RETRY_TIMEOUT_RESTRICTED)
             missing = self.connectToMissing()
             self.retryDisconnected(exclude=missing)
             logger.debug("{} next check for retries in {:.2f} seconds".

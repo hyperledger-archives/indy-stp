@@ -21,4 +21,4 @@ def testKitZStacksConnected(registry, tdir, looper):
 
     prepStacks(looper, *stacks, connect=False, useKeys=True)
     looper.run(eventually(checkStacksConnected, stacks, retryWait=1,
-                          timeout=10))
+                          timeout=5))
