@@ -57,6 +57,7 @@ class Remote:
         # TODO: A stack should have a monitor and it should identify remote
         # by endpoint
 
+        self._numOfReconnects = 0
         self._isConnected = False
         # Currently keeping uid field to resemble RAET RemoteEstate
         self.uid = name
@@ -75,7 +76,11 @@ class Remote:
         return True
 
     def setConnected(self):
+        self._numOfReconnects += 1
         self._isConnected = True
+
+    def firstConnect(self):
+        return self._numOfReconnects == 0
 
     def connect(self, context, localPubKey, localSecKey, typ=None):
         typ = typ or zmq.DEALER
@@ -811,11 +816,11 @@ class ZStack(NetworkInterface):
             socket.send(msg, flags=zmq.NOBLOCK)
             logger.debug('{} transmitting message {} to {}'
                         .format(self, msg, uid))
-            # if not remote.isConnected:
-            #     logger.warning('Remote {} is not connected - '
-            #                    'message will not be sent immediately.'
-            #                    'If this problem does not resolve itself - '
-            #                    'check your firewall settings'.format(uid))
+            if not remote.isConnected and not remote.firstConnect:
+                logger.warning('Remote {} is not connected - '
+                               'message will not be sent immediately.'
+                               'If this problem does not resolve itself - '
+                               'check your firewall settings'.format(uid))
             return True
         except zmq.Again:
             logger.info('{} could not transmit message to {}'
