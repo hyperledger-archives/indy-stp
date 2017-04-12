@@ -662,13 +662,13 @@ class ZStack(NetworkInterface):
     def handlePingPong(self, msg, frm, ident):
         if msg in (self.pingMessage, self.pongMessage):
             if msg == self.pingMessage:
-                logger.trace('{} got ping from {}'.format(self, frm))
+                logger.info('{} got ping from {}'.format(self, frm))
                 self.send(self.pongMessage, frm)
-                logger.trace('{} sent pong to {}'.format(self, frm))
+                logger.info('{} sent pong to {}'.format(self, frm))
             if msg == self.pongMessage:
                 if ident in self.remotesByKeys:
                     self.remotesByKeys[ident].setConnected()
-                logger.trace('{} got pong from {}'.format(self, frm))
+                logger.info('{} got pong from {}'.format(self, frm))
             return True
         return False
 
@@ -782,7 +782,9 @@ class ZStack(NetworkInterface):
 
     def transmit(self, msg, uid, timeout=None):
         remote = self.remotes.get(uid)
-        if remote is None:
+        if not remote:
+            remote = self.remotesByKeys.get(uid)
+        if not remote:
             logger.error("Remote {} does not exist!".format(uid))
             return False
         socket = remote.socket
