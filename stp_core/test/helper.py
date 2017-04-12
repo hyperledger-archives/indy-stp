@@ -2,6 +2,9 @@ import os
 
 import logging
 
+import json
+from stp_core.crypto.util import randomSeed
+
 from stp_core.loop.motor import Motor
 from stp_core.network.keep_in_touch import KITNetworkInterface
 
@@ -27,6 +30,25 @@ class Printer:
 
 def chkPrinted(p, m):
     assert m in [_[0] for _ in p.printeds]
+
+
+class CollectingMsgsHandler:
+    def __init__(self):
+        self.receivedMessages = []
+
+    def handler(self, m):
+        msg, sender = m
+        self.receivedMessages.append(msg)
+        # print("Got message", msg)
+
+
+class CounterMsgsHandler:
+    def __init__(self):
+        self.receivedMsgCount = 0
+
+    def handler(self, m):
+        msg, sender = m
+        self.receivedMsgCount += 1
 
 
 class SMotor(Motor):
@@ -69,3 +91,29 @@ def checkStacksConnected(stacks):
         for otherStack in stacks:
             if stack != otherStack:
                 assert stack.isConnectedTo(otherStack.name)
+
+
+class MessageSender(Motor):
+    def __init__(self, numMsgs, fromStack, toName):
+        super().__init__()
+        self._numMsgs = numMsgs
+        self._fromStack = fromStack
+        self._toName = toName
+        self.sentMsgCount = 0
+
+    def _statusChanged(self, old, new):
+        pass
+
+    def onStopping(self, *args, **kwargs):
+        pass
+
+    async def prod(self, limit) -> int:
+        count = 0
+        while self.sentMsgCount < self._numMsgs:
+            msg = json.dumps({'random': randomSeed().decode()}).encode()
+            if self._fromStack.send(msg, self._toName):
+                self.sentMsgCount += 1
+                count += 1
+            else:
+                break
+        return count
