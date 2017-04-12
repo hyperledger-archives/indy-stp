@@ -2,7 +2,7 @@ import os
 
 import logging
 
-from jsonpickle import json
+import json
 from stp_core.crypto.util import randomSeed
 
 from stp_core.loop.motor import Motor
@@ -31,6 +31,7 @@ class Printer:
 def chkPrinted(p, m):
     assert m in [_[0] for _ in p.printeds]
 
+
 class CollectingMsgsHandler:
     def __init__(self):
         self.receivedMessages = []
@@ -38,7 +39,7 @@ class CollectingMsgsHandler:
     def handler(self, m):
         msg, sender = m
         self.receivedMessages.append(msg)
-        #print("Got message", msg)
+        # print("Got message", msg)
 
 
 class CounterMsgsHandler:
@@ -91,8 +92,8 @@ def checkStacksConnected(stacks):
             if stack != otherStack:
                 assert stack.isConnectedTo(otherStack.name)
 
-class MessageSender(Motor):
 
+class MessageSender(Motor):
     def __init__(self, numMsgs, fromStack, toName):
         super().__init__()
         self._numMsgs = numMsgs
