@@ -639,7 +639,7 @@ class ZStack(NetworkInterface):
                     continue
 
                 try:
-                    msg = json.loads(msg)
+                    msg = self.deserializeMsg(msg)
                 except Exception as e:
                     logger.error('Error {} while converting message {} '
                                  'to JSON from {}'.format(e, msg, ident))
@@ -742,7 +742,6 @@ class ZStack(NetworkInterface):
                          format(self, name, ha))
         return remote
 
-
     def sendPing(self, remote):
         r = self.send(self.pingMessage, remote.name)
         if r is True:
@@ -767,18 +766,21 @@ class ZStack(NetworkInterface):
         else:
             if remoteName is None:
                 r = []
+                # Serializing beforehand since to avoid serializing for each
+                # remote
+                msg = self.serializeMsg(msg)
                 for uid in self.remotes:
-                    r.append(self.transmit(msg, uid))
+                    r.append(self.transmit(msg, uid, serialized=True))
                 return all(r)
             else:
                 return self.transmit(msg, remoteName)
 
-    def transmit(self, msg, uid, timeout=None):
+    def transmit(self, msg, uid, timeout=None, serialized=False):
         # Timeout is unused as of now
         assert uid in self.remotes
         socket = self.remotes[uid].socket
         if socket:
-            msg = self.prepMsg(msg)
+            msg = self.serializeMsg(msg) if not serialized else msg
             try:
                 # noinspection PyUnresolvedReferences
                 # socket.send(self.signedMsg(msg), flags=zmq.NOBLOCK)
@@ -791,7 +793,7 @@ class ZStack(NetworkInterface):
                 return False
         else:
             logger.warning('{} has uninitialised socket for remote {}'.
-                        format(self, self.remotes[uid]))
+                           format(self, self.remotes[uid]))
             return False
 
     def transmitThroughListener(self, msg, ident):
@@ -803,7 +805,7 @@ class ZStack(NetworkInterface):
             logger.info("This is a temporary workaround for not being able to "
                         "disconnect a ROUTER's remote")
             return
-        msg = self.prepMsg(msg)
+        msg = self.serializeMsg(msg)
         try:
             # noinspection PyUnresolvedReferences
             # self.listener.send_multipart([ident, self.signedMsg(msg)],
@@ -817,7 +819,7 @@ class ZStack(NetworkInterface):
                          format(self, e, ident))
 
     @staticmethod
-    def prepMsg(msg):
+    def serializeMsg(msg):
         if isinstance(msg, Mapping):
             msg = json.dumps(msg)
         if isinstance(msg, str):
@@ -825,10 +827,15 @@ class ZStack(NetworkInterface):
         assert isinstance(msg, bytes)
         return msg
 
+    @staticmethod
+    def deserializeMsg(msg):
+        if isinstance(msg, bytes):
+            msg = msg.decode()
+        msg = json.loads(msg)
+        return msg
+
     def signedMsg(self, msg: bytes, signer: Signer=None):
-        # Just disabling signing for measuring how much is load testing impacted
-        # sig = self.signer.signature(msg)
-        sig = b'1111111111111111111111111111111111111111111111111111111111111111'
+        sig = self.signer.signature(msg)
         return msg + sig
 
     def verify(self, msg, by):
