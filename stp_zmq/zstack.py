@@ -794,7 +794,7 @@ class ZStack(NetworkInterface):
             msg = self.prepMsg(msg)
             # socket.send(self.signedMsg(msg), flags=zmq.NOBLOCK)
             socket.send(msg, flags=zmq.NOBLOCK)
-            logger.info('{} transmitting message {} to {}'
+            logger.debug('{} transmitting message {} to {}'
                         .format(self, msg, uid))
             # if not remote.isConnected:
             #     logger.warning('Remote {} is not connected - '
@@ -811,9 +811,9 @@ class ZStack(NetworkInterface):
         if isinstance(ident, str):
             ident = ident.encode()
         if ident not in self.peersWithoutRemotes:
-            logger.info('{} not sending message {} to {}'.
+            logger.debug('{} not sending message {} to {}'.
                         format(self, msg, ident))
-            logger.info("This is a temporary workaround for not being able to "
+            logger.debug("This is a temporary workaround for not being able to "
                         "disconnect a ROUTER's remote")
             return
         msg = self.prepMsg(msg)
@@ -975,13 +975,13 @@ class ZStack(NetworkInterface):
     # complete, they need to be removed then.
     @property
     def nameRemotes(self):
-        logger.info('{} proxy method used on {}'.
+        logger.debug('{} proxy method used on {}'.
                     format(inspect.stack()[0][3], self))
         return self.remotes
 
     @property
     def keep(self):
-        logger.info('{} proxy method used on {}'.
+        logger.debug('{} proxy method used on {}'.
                     format(inspect.stack()[0][3], self))
         if not hasattr(self, '_keep'):
             self._keep = DummyKeep(self)
@@ -1008,13 +1008,13 @@ class DummyKeep:
 
     @property
     def auto(self):
-        logger.info('{} proxy method used on {}'.
+        logger.debug('{} proxy method used on {}'.
                     format(inspect.stack()[0][3], self))
         return self._auto
 
     @auto.setter
     def auto(self, mode):
-        logger.info('{} proxy method used on {}'.
+        logger.debug('{} proxy method used on {}'.
                     format(inspect.stack()[0][3], self))
         # AutoMode.once whose value is 1 is not used os dont care
         if mode != self._auto:
