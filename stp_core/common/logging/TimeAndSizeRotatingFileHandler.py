@@ -7,13 +7,12 @@ class TimeAndSizeRotatingFileHandler(TimedRotatingFileHandler, RotatingFileHandl
 
     def __init__(self, filename, when = 'h', interval = 1, backupCount = 0,
                  encoding = None, delay = False, utc = False, atTime = None,
-                 mode = 'a', maxBytes=0):
+                 maxBytes=0):
 
         TimedRotatingFileHandler.__init__(self, filename, when, interval,
-                                              backupCount, encoding, delay,
-                                              utc, atTime)
-        RotatingFileHandler.__init__(self, filename, mode, maxBytes,
-                                     backupCount, encoding, delay)
+                                          backupCount, encoding, delay,
+                                          utc, atTime)
+        self.maxBytes = maxBytes
 
     def shouldRollover(self, record):
         return bool(TimedRotatingFileHandler.shouldRollover(self, record)) or \
