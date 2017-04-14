@@ -22,6 +22,7 @@ def registry():
 def loop():
     loop = zmq.asyncio.ZMQEventLoop()
     loop.set_debug(True)
+    return loop
 
 
 @pytest.yield_fixture()
