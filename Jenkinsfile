@@ -67,5 +67,3 @@ if (env.BRANCH_NAME == 'perf-imp') { // not PR
 
     testAndPublish.publishPypi('Publish to pypi', [:], releaseVersion)
 }
-
-testAndPublish(name, [ubuntu: testUbuntu])
