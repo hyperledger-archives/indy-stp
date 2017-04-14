@@ -31,7 +31,7 @@ METADATA = os.path.join(SETUP_DIRNAME, 'stp_core', '__metadata__.py')
 exec(compile(open(METADATA).read(), METADATA, 'exec'))
 
 setup(
-    name='stp-dev',
+    name='stp-perf-imp',
     version=__version__,
     description='Secure Transport Protocol core',
     url='https://github.com/evernym/stp',
