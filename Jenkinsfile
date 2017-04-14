@@ -57,7 +57,7 @@ def testWindowsNoDocker = {
 
 testAndPublish(name, [ubuntu: testUbuntu], false) // run tests only
 
-if (env.BRANCH_NAME == 'perf-imp') { // not PR
+if (env.BRANCH_NAME == '3pc-batch') { // not PR
     def releaseVersion = ''
     stage('Get release version') {
         node('ubuntu-master') {
