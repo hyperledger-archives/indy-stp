@@ -20,5 +20,8 @@ def testKitZStacksConnected(registry, tdir, looper):
         stacks.append(stack)
 
     prepStacks(looper, *stacks, connect=False, useKeys=True)
-    looper.run(eventually(checkStacksConnected, stacks, retryWait=1,
-                          timeout=5))
+    # TODO: the connection may not be established for the first try because
+    # some of the stacks may not have had a remote yet (that is they haven't had yet called connect)
+    timeout = 2*KITZStack.RETRY_TIMEOUT_RESTRICTED+1
+    looper.run(eventually(
+        checkStacksConnected, stacks, retryWait=1, timeout=timeout))
