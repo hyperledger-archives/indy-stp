@@ -48,7 +48,7 @@ def testManyMessages(tdir, looper):
                   restricted=True, onlyListener=True)
     prepStacks(looper, alpha, beta, connect=True, useKeys=True)
 
-    msgNum = 5000
+    msgNum = 500000
     msgSender = MessageSender(msgNum, alpha, beta.name)
     looper.add(msgSender)
 
