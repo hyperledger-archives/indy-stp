@@ -588,7 +588,7 @@ class ZStack(NetworkInterface):
                     # Router probing sends empty message on connection
                     continue
                 i += 1
-                if ident not in self.remotesByKeys:
+                if self.onlyListener and ident not in self.remotesByKeys:
                     self.peersWithoutRemotes.add(ident)
                 self._verifyAndAppend(msg, ident)
             except zmq.Again:
@@ -669,19 +669,10 @@ class ZStack(NetworkInterface):
             if msg == self.pingMessage:
                 logger.info('{} got ping from {}'.format(self, frm))
 
-                ponged = False
-                if ident in self.remotesByKeys:
-                    # we already called connect and have a remote
-                    ponged = self.transmit(self.pongMessage, frm)
-                elif ident in self.peersWithoutRemotes:
-                    # we haven't yet called connect to this remote
-                    ponged = self.transmitThroughListener(self.pongMessage, ident)
-
-                if ponged:
+                if self.send(self.pongMessage, frm):
                     logger.info('{} sent pong to {}'.format(self, frm))
                 else:
-                    logger.info('{} failed to pong {}'.
-                                format(self.name, frm))
+                    logger.info('{} failed to pong {}'.format(self, frm))
 
             if msg == self.pongMessage:
                 if ident in self.remotesByKeys:
@@ -760,8 +751,6 @@ class ZStack(NetworkInterface):
         self.remotes[name] = remote
         # TODO: Use weakref to remote below instead
         self.remotesByKeys[remotePublicKey] = remote
-        if remotePublicKey in self.peersWithoutRemotes:
-            self.peersWithoutRemotes.remove(remotePublicKey)
         if remoteVerkey:
             self.addVerifier(remoteVerkey)
         else:
