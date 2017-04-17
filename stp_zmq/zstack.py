@@ -1,6 +1,10 @@
 import inspect
 
-import ujson as json
+try:
+    import ujson as json
+except ImportError:
+    import json
+
 import os
 import shutil
 import sys
@@ -799,7 +803,7 @@ class ZStack(NetworkInterface):
         socket = remote.socket
         if not socket:
             logger.info('{} has uninitialised socket '
-                        'for remote {}'.format(uid))
+                        'for remote {}'.format(self, uid))
             return False
         try:
             msg = self.serializeMsg(msg) if not serialized else msg
