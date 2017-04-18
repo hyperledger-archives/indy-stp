@@ -811,7 +811,7 @@ class ZStack(NetworkInterface):
             socket.send(msg, flags=zmq.NOBLOCK)
             logger.debug('{} transmitting message {} to {}'
                         .format(self, msg, uid))
-            if not remote.isConnected and not remote.firstConnect:
+            if not remote.isConnected: # and not remote.firstConnect:
                 logger.warning('Remote {} is not connected - '
                                'message will not be sent immediately.'
                                'If this problem does not resolve itself - '
