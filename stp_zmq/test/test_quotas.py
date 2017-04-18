@@ -15,9 +15,10 @@ def testMessageQuota(tdir, looper):
     alphaP = Printer(names[0])
     betaMsgHandler = CollectingMsgsHandler()
 
-    alpha = ZStack(names[0], ha=genHa(), basedirpath=tdir, msgHandler=alphaP.print,
-                   restricted=True)
-    beta = ZStack(names[1], ha=genHa(), basedirpath=tdir, msgHandler=betaMsgHandler.handler,
+    alpha = ZStack(names[0], ha=genHa(), basedirpath=tdir,
+                   msgHandler=alphaP.print, restricted=True)
+    beta = ZStack(names[1], ha=genHa(), basedirpath=tdir,
+                  msgHandler=betaMsgHandler.handler,
                   restricted=True, onlyListener=True)
 
     prepStacks(looper, alpha, beta, connect=True, useKeys=True)
@@ -36,19 +37,21 @@ def testMessageQuota(tdir, looper):
     looper.run(eventually(checkAllReceived, retryWait=0.5,
                           timeout=5))
 
+
 def testManyMessages(tdir, looper):
     names = ['Alpha', 'Beta']
     genKeys(tdir, names)
     alphaP = Printer(names[0])
     betaMsgHandler = CounterMsgsHandler()
 
-    alpha = ZStack(names[0], ha=genHa(), basedirpath=tdir, msgHandler=alphaP.print,
-                   restricted=True)
-    beta = ZStack(names[1], ha=genHa(), basedirpath=tdir, msgHandler=betaMsgHandler.handler,
-                  restricted=True, onlyListener=True)
+    alpha = ZStack(names[0], ha=genHa(), basedirpath=tdir,
+                   msgHandler=alphaP.print, restricted=True)
+    beta = ZStack(names[1], ha=genHa(), basedirpath=tdir,
+                  msgHandler=betaMsgHandler.handler, restricted=True,
+                  onlyListener=True)
     prepStacks(looper, alpha, beta, connect=True, useKeys=True)
 
-    msgNum = 500000
+    msgNum = 5000
     msgSender = MessageSender(msgNum, alpha, beta.name)
     looper.add(msgSender)
 
