@@ -797,7 +797,7 @@ class ZStack(NetworkInterface):
         socket = remote.socket
         if not socket:
             logger.error('{} has uninitialised socket '
-                         'for remote {}'.format(uid))
+                         'for remote {}'.format(self, uid))
             return False
         try:
             msg = self.prepMsg(msg)
