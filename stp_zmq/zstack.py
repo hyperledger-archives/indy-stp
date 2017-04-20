@@ -671,17 +671,17 @@ class ZStack(NetworkInterface):
     def handlePingPong(self, msg, frm, ident):
         if msg in (self.pingMessage, self.pongMessage):
             if msg == self.pingMessage:
-                logger.info('{} got ping from {}'.format(self, frm))
+                logger.debug('{} got ping from {}'.format(self, frm))
 
                 if self.send(self.pongMessage, frm):
-                    logger.info('{} sent pong to {}'.format(self, frm))
+                    logger.debug('{} sent pong to {}'.format(self, frm))
                 else:
-                    logger.info('{} failed to pong {}'.format(self, frm))
+                    logger.debug('{} failed to pong {}'.format(self, frm))
 
             if msg == self.pongMessage:
                 if ident in self.remotesByKeys:
                     self.remotesByKeys[ident].setConnected()
-                logger.info('{} got pong from {}'.format(self, frm))
+                logger.debug('{} got pong from {}'.format(self, frm))
             return True
         return False
 
@@ -765,7 +765,7 @@ class ZStack(NetworkInterface):
     def sendPing(self, remote):
         r = self.send(self.pingMessage, remote.name)
         if r is True:
-            logger.info('{} pinged {} at {}'.format(self.name, remote.name,
+            logger.debug('{} pinged {} at {}'.format(self.name, remote.name,
                                                      self.ha))
         elif r is False:
             # TODO: This fails the first time as socket is not established,
@@ -774,10 +774,10 @@ class ZStack(NetworkInterface):
                         format(self.name, remote.name, remote.ha),
                         extra={"cli": False})
         elif r is None:
-            logger.info('{} will be sending in batch'.format(self))
+            logger.debug('{} will be sending in batch'.format(self))
         else:
-            logger.info('{} got an unexpected return value {} while sending'.
-                        format(self, r))
+            logger.warn('{} got an unexpected return value {} while sending'.
+                         format(self, r))
         return r
 
     def send(self, msg: Any, remoteName: str = None, ha=None):
@@ -802,8 +802,8 @@ class ZStack(NetworkInterface):
             return False
         socket = remote.socket
         if not socket:
-            logger.info('{} has uninitialised socket '
-                        'for remote {}'.format(self, uid))
+            logger.error('{} has uninitialised socket '
+                         'for remote {}'.format(self, uid))
             return False
         try:
             msg = self.serializeMsg(msg) if not serialized else msg
@@ -952,7 +952,7 @@ class ZStack(NetworkInterface):
 
     def setRestricted(self, restricted: bool):
         if self.isRestricted != restricted:
-            logger.info('{} setting restricted to {}'.format(self, restricted))
+            logger.debug('{} setting restricted to {}'.format(self, restricted))
             self.stop()
 
             # TODO: REMOVE, it will make code slow, only doing to allow the
