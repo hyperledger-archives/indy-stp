@@ -52,6 +52,30 @@ def testUnrestricted2ZStackCommunication(tdir, looper):
     looper.run(eventually(chkPrinted, betaP, {'greetings': 'hi'}))
 
 
+def testZStackSendMethodReturnsFalseIfDestinationIsUnknown(tdir, looper):
+    """
+    Checks: https://evernym.atlassian.net/browse/SOV-971
+    1. Connect two stacks 
+    2. Disconnect a remote from one side
+    3. Send a message from disconnected remote
+    Expected result: the stack's method 'send' should not 
+        fail just return False
+    """
+    names = ['Alpha', 'Beta']
+    genKeys(tdir, names)
+    alphaP = Printer(names[0])
+    betaP = Printer(names[1])
+
+    alpha = ZStack(names[0], ha=genHa(), basedirpath=tdir,
+                   msgHandler=alphaP.print, restricted=True)
+    beta = ZStack(names[1], ha=genHa(), basedirpath=tdir,
+                  msgHandler=betaP.print, restricted=True)
+    prepStacks(looper, alpha, beta, connect=True, useKeys=True)
+    # disconnect remote
+    alpha.getRemote(beta.name).disconnect()
+    # check send message returns False
+    assert alpha.send({'greetings': 'hello'}, beta.name) is False
+
 """
 TODO:
 * Create ZKitStack, which should maintain a registry and method to check for any
