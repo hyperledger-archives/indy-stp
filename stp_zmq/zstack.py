@@ -792,11 +792,11 @@ class ZStack(NetworkInterface):
     def transmit(self, msg, uid, timeout=None):
         remote = self.remotes.get(uid)
         if not remote:
-            logger.error("Remote {} does not exist!".format(uid))
+            logger.debug("Remote {} does not exist!".format(uid))
             return False
         socket = remote.socket
         if not socket:
-            logger.error('{} has uninitialised socket '
+            logger.debug('{} has uninitialised socket '
                          'for remote {}'.format(self, uid))
             return False
         try:
