@@ -75,6 +75,7 @@ def prepStacks(looper, *stacks, connect=True, useKeys=True):
         looper.add(motor)
     if connect:
         connectStacks(stacks, useKeys)
+        looper.runFor(1)
 
 
 def connectStacks(stacks, useKeys=True):
