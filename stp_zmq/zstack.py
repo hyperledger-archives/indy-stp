@@ -798,8 +798,8 @@ class ZStack(NetworkInterface):
             return False
         socket = remote.socket
         if not socket:
-            logger.error('{} has uninitialised socket '
-                         'for remote {}'.format(self, uid))
+            logger.warning('{} has uninitialised socket '
+                           'for remote {}'.format(self, uid))
             return False
         try:
             msg = self.serializeMsg(msg) if not serialized else msg
