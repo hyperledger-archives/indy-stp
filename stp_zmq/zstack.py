@@ -12,7 +12,7 @@ import time
 from abc import abstractmethod
 from binascii import hexlify, unhexlify
 from collections import deque
-from typing import Dict, Mapping, Callable, Tuple, Any
+from typing import Dict, Mapping, Callable, Tuple, Any, Union
 from typing import Set
 
 # import stp_zmq.asyncio
@@ -120,9 +120,7 @@ class Remote:
             logger.debug('{} close was called on a null socket, maybe close is '
                          'being called twice.'.format(self))
 
-
         self._isConnected = False
-
 
     @property
     def hasLostConnection(self):
@@ -672,11 +670,7 @@ class ZStack(NetworkInterface):
         if msg in (self.pingMessage, self.pongMessage):
             if msg == self.pingMessage:
                 logger.debug('{} got ping from {}'.format(self, frm))
-
-                if self.send(self.pongMessage, frm):
-                    logger.debug('{} sent pong to {}'.format(self, frm))
-                else:
-                    logger.debug('{} failed to pong {}'.format(self, frm))
+                self.sendPingPong(frm, is_ping=False)
 
             if msg == self.pongMessage:
                 if ident in self.remotesByKeys:
@@ -731,7 +725,7 @@ class ZStack(NetworkInterface):
                     extra={"cli": "PLAIN", "tags": ["node-looking"]})
 
         # This should be scheduled as an async task
-        self.sendPing(remote)
+        self.sendPingPong(remote, is_ping=True)
         return remote.uid
 
     def reconnectRemote(self, remote):
@@ -739,7 +733,7 @@ class ZStack(NetworkInterface):
         public, secret = self.selfEncKeys
         remote.disconnect()
         remote.connect(self.ctx, public, secret)
-        self.sendPing(remote)
+        self.sendPingPong(remote, is_ping=True)
 
     def disconnectByName(self, name: str):
         for nm in self.remotes:
@@ -762,22 +756,24 @@ class ZStack(NetworkInterface):
                          format(self, name, ha))
         return remote
 
-    def sendPing(self, remote):
-        r = self.send(self.pingMessage, remote.name)
+    def sendPingPong(self, remote: Union[str, Remote], is_ping=True):
+        msg = self.pingMessage if is_ping else self.pongMessage
+        action = 'ping' if is_ping else 'pong'
+        name = remote if isinstance(remote, (str, bytes)) else remote.name
+        r = self.send(msg, name)
         if r is True:
-            logger.debug('{} pinged {} at {}'.format(self.name, remote.name,
-                                                     self.ha))
+            logger.debug('{} {}ed {}'.format(self.name, action, name))
         elif r is False:
             # TODO: This fails the first time as socket is not established,
             # need to make it retriable
-            logger.info('{} failed to ping {} at {}'.
-                        format(self.name, remote.name, remote.ha),
+            logger.info('{} failed to {} {}'.
+                        format(self.name, action, name),
                         extra={"cli": False})
         elif r is None:
             logger.debug('{} will be sending in batch'.format(self))
         else:
             logger.warn('{} got an unexpected return value {} while sending'.
-                         format(self, r))
+                        format(self, r))
         return r
 
     def send(self, msg: Any, remoteName: str = None, ha=None):
@@ -952,7 +948,8 @@ class ZStack(NetworkInterface):
 
     def setRestricted(self, restricted: bool):
         if self.isRestricted != restricted:
-            logger.debug('{} setting restricted to {}'.format(self, restricted))
+            logger.debug('{} setting restricted to {}'.
+                         format(self, restricted))
             self.stop()
 
             # TODO: REMOVE, it will make code slow, only doing to allow the
