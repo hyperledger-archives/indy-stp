@@ -186,6 +186,7 @@ class ZStack(NetworkInterface):
     sigLen = 64
     pingMessage = 'pi'
     pongMessage = 'po'
+    healthMessages = {pingMessage.encode(), pongMessage.encode()}
 
     # TODO: This is not implemented, implement this
     messageTimeout = 3
@@ -794,7 +795,7 @@ class ZStack(NetworkInterface):
     def transmit(self, msg, uid, timeout=None, serialized=False):
         remote = self.remotes.get(uid)
         if not remote:
-            logger.error("Remote {} does not exist!".format(uid))
+            logger.debug("Remote {} does not exist!".format(uid))
             return False
         socket = remote.socket
         if not socket:
@@ -807,7 +808,7 @@ class ZStack(NetworkInterface):
             socket.send(msg, flags=zmq.NOBLOCK)
             logger.debug('{} transmitting message {} to {}'
                         .format(self, msg, uid))
-            if not remote.isConnected and not remote.firstConnect:
+            if not remote.isConnected and msg not in self.healthMessages:
                 logger.warning('Remote {} is not connected - '
                                'message will not be sent immediately.'
                                'If this problem does not resolve itself - '
