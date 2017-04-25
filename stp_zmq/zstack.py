@@ -63,6 +63,8 @@ class Remote:
 
         self._numOfReconnects = 0
         self._isConnected = False
+        self._lastConnectedAt = None
+
         # Currently keeping uid field to resemble RAET RemoteEstate
         self.uid = name
 
@@ -82,6 +84,7 @@ class Remote:
     def setConnected(self):
         self._numOfReconnects += 1
         self._isConnected = True
+        self._lastConnectedAt = time.perf_counter()
 
     def firstConnect(self):
         return self._numOfReconnects == 0
@@ -1112,7 +1115,10 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
         exclude = exclude or {}
         for remote in self.remotes.values():
             if remote.name not in exclude and not remote.isConnected:
-                self.reconnectRemote(remote)
+                if not remote.socket:
+                    self.reconnectRemote(remote)
+                else:
+                    self.sendPingPong(remote, is_ping=True)
 
     def connectToMissing(self):
         """
