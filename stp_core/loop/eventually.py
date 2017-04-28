@@ -22,7 +22,8 @@ def isMinimalConfiguration():
     mem = psutil.virtual_memory()
     memAvailableGb = mem.available / (1024 * 1024 * 1024)
     cpuCount = psutil.cpu_count()
-    return memAvailableGb <= 1.5 and cpuCount == 1
+    # we can have a 8 cpu but 100Mb free RAM and the tests will be slow
+    return memAvailableGb <= 1.5  # and cpuCount == 1
 
 
 # increase this number to allow eventually to change timeouts proportionatly
