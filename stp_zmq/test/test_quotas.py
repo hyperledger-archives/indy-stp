@@ -42,13 +42,21 @@ def testManyMessages(tdir, looper):
     alphaP = Printer(names[0])
     betaMsgHandler = CounterMsgsHandler()
 
-    alpha = ZStack(names[0], ha=genHa(), basedirpath=tdir, msgHandler=alphaP.print,
+    alpha = ZStack(names[0],
+                   ha=genHa(),
+                   basedirpath=tdir,
+                   msgHandler=alphaP.print,
                    restricted=True)
-    beta = ZStack(names[1], ha=genHa(), basedirpath=tdir, msgHandler=betaMsgHandler.handler,
-                  restricted=True, onlyListener=True)
+    beta = ZStack(names[1],
+                  ha=genHa(),
+                  basedirpath=tdir,
+                  msgHandler=betaMsgHandler.handler,
+                  restricted=True)
     prepStacks(looper, alpha, beta, connect=True, useKeys=True)
 
-    msgNum = 500000
+    looper.runFor(1)
+
+    msgNum = 100000
     msgSender = MessageSender(msgNum, alpha, beta.name)
     looper.add(msgSender)
 
@@ -56,5 +64,6 @@ def testManyMessages(tdir, looper):
         assert msgSender.sentMsgCount == msgNum
         assert betaMsgHandler.receivedMsgCount == msgNum
 
-    looper.run(eventually(checkAllReceived, retryWait=1,
+    looper.run(eventually(checkAllReceived,
+                          retryWait=1,
                           timeout=60))
