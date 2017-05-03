@@ -759,12 +759,11 @@ class ZStack(NetworkInterface):
                          format(self, name, ha))
         return remote
 
-
     def sendPing(self, remote):
         r = self.send(self.pingMessage, remote.name)
         if r is True:
             logger.debug('{} pinged {} at {}'.format(self.name, remote.name,
-                                                     self.ha))
+                                                     remote.ha))
         elif r is False:
             # TODO: This fails the first time as socket is not established,
             # need to make it retriable
