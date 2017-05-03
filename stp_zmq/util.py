@@ -6,6 +6,7 @@ import os
 import shutil
 from binascii import hexlify, unhexlify
 
+import base58
 from libnacl import crypto_sign_seed_keypair
 from zmq.auth.certs import _write_key_file, _cert_public_banner, \
     _cert_secret_banner
@@ -13,6 +14,14 @@ from zmq.utils import z85
 
 from stp_core.crypto.util import ed25519PkToCurve25519 as ep2c, \
     ed25519SkToCurve25519 as es2c, isHex, randomSeed
+
+
+def convert_z85_to_base58(key):
+    if key is None:
+        raise ValueError("Key must not be None to do the conversion")
+
+    binary_key = z85.decode(key)
+    return base58.b58encode(binary_key)
 
 
 def createCertsFromKeys(key_dir, name, public_key, secret_key=None,
