@@ -49,4 +49,4 @@ def testWindowsNoDocker = {
     }
 }
 
-testAndPublish(name, [ubuntu: testUbuntu], true, options)
+testAndPublish(name, [ubuntu: testUbuntu])
