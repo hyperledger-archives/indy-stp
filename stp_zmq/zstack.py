@@ -1030,13 +1030,6 @@ class ZStack(NetworkInterface):
     def clearRemoteKeeps(self):
         pass
 
-    # def addListener(self, ha):
-    #     pass
-    #
-    # @property
-    # def defaultListener(self):
-    #     pass
-
 
 class DummyKeep:
     def __init__(self, stack, *args, **kwargs):
@@ -1062,9 +1055,16 @@ class DummyKeep:
 
 
 class SimpleZStack(ZStack):
-    def __init__(self, stackParams: Dict, msgHandler: Callable, seed=None,
-                 onlyListener=False, sighex: str=None,
-                 listenerQuota=DEFAULT_LISTENER_QUOTA, remoteQuota=DEFAULT_REMOTE_QUOTA):
+
+    def __init__(self,
+                 stackParams: Dict,
+                 msgHandler: Callable,
+                 seed=None,
+                 onlyListener=False,
+                 sighex: str=None,
+                 listenerQuota=DEFAULT_LISTENER_QUOTA,
+                 remoteQuota=DEFAULT_REMOTE_QUOTA):
+
         # TODO: sighex is unused as of now, remove once test is removed or
         # maybe use sighex to generate all keys, DECISION DEFERRED
 
@@ -1078,12 +1078,16 @@ class SimpleZStack(ZStack):
         basedirpath = stackParams['basedirpath']
 
         auto = stackParams.pop('auth_mode', None)
-        restricted = False if auto == AuthMode.ALLOW_ANY.value else True
-
-        super().__init__(name, ha, basedirpath, msgHandler=self.msgHandler,
-                         restricted=restricted, seed=seed,
+        restricted = auto != AuthMode.ALLOW_ANY.value
+        super().__init__(name,
+                         ha,
+                         basedirpath,
+                         msgHandler=self.msgHandler,
+                         restricted=restricted,
+                         seed=seed,
                          onlyListener=onlyListener,
-                         listenerQuota=listenerQuota, remoteQuota=remoteQuota)
+                         listenerQuota=listenerQuota,
+                         remoteQuota=remoteQuota)
 
 
 class KITZStack(SimpleZStack, KITNetworkInterface):
@@ -1092,40 +1096,60 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
     RETRY_TIMEOUT_NOT_RESTRICTED = 6
     RETRY_TIMEOUT_RESTRICTED = 15
 
-    def __init__(self, stackParams: dict, msgHandler: Callable,
-                 registry: Dict[str, HA], seed=None, sighex: str = None,
-                 listenerQuota=DEFAULT_LISTENER_QUOTA, remoteQuota=DEFAULT_REMOTE_QUOTA):
-        SimpleZStack.__init__(self, stackParams, msgHandler, seed=seed, sighex=sighex,
-                              listenerQuota=listenerQuota, remoteQuota=remoteQuota)
-        KITNetworkInterface.__init__(self, registry=registry)
+    def __init__(self,
+                 stackParams: dict,
+                 msgHandler: Callable,
+                 registry: Dict[str, HA],
+                 seed=None,
+                 sighex: str = None,
+                 listenerQuota=DEFAULT_LISTENER_QUOTA,
+                 remoteQuota=DEFAULT_REMOTE_QUOTA):
+
+        SimpleZStack.__init__(self,
+                              stackParams,
+                              msgHandler,
+                              seed=seed,
+                              sighex=sighex,
+                              listenerQuota=listenerQuota,
+                              remoteQuota=remoteQuota)
+
+        KITNetworkInterface.__init__(self,
+                                     registry=registry)
 
     def maintainConnections(self, force=False):
         """
         Ensure appropriate connections.
 
         """
-        cur = time.perf_counter()
-        if cur > self.nextCheck or force:
+        now = time.perf_counter()
+        if now < self.nextCheck and not force:
+            return False
+        self.nextCheck = now + (self.RETRY_TIMEOUT_NOT_RESTRICTED
+                                if self.isKeySharing
+                                else self.RETRY_TIMEOUT_RESTRICTED)
+        missing = self.connectToMissing()
+        self.retryDisconnected(exclude=missing)
+        logger.debug("{} next check for retries in {:.2f} seconds"
+                     .format(self, self.nextCheck - now))
+        return True
 
-            self.nextCheck = cur + (self.RETRY_TIMEOUT_NOT_RESTRICTED if self.isKeySharing
-                                    else self.RETRY_TIMEOUT_RESTRICTED)
-            missing = self.connectToMissing()
-            self.retryDisconnected(exclude=missing)
-            logger.debug("{} next check for retries in {:.2f} seconds".
-                         format(self, self.nextCheck - cur))
-            return True
-        return False
+    def reconcileNodeReg(self) -> set:
+        """
+        Check whether registry contains some addresses 
+        that were never connected to
+        
+        :return: 
+        """
 
-    def reconcileNodeReg(self):
         matches = set()
-        for r in self.remotes.values():
-            if r.name in self.registry:
-                if self.sameAddr(r.ha, self.registry[r.name]):
-                    matches.add(r.name)
-                    logger.debug("{} matched remote is {} {}".
-                                 format(self, r.uid, r.ha))
-
-        return set(self.registry.keys()) - matches - {self.name,}
+        for name, remote in self.remotes:
+            if name not in self.registry:
+                continue
+            if self.sameAddr(remote.ha, self.registry[name]):
+                matches.add(name)
+                logger.debug("{} matched remote {} {}".
+                             format(self, remote.uid, remote.ha))
+        return self.registry.keys() - matches - {self.name}
 
     def retryDisconnected(self, exclude=None):
         exclude = exclude or {}
@@ -1137,21 +1161,25 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
             else:
                 self.reconnectRemote(remote)
 
-    def connectToMissing(self):
+    def connectToMissing(self) -> set:
         """
         Try to connect to the missing nodes
-
         """
+
         missing = self.reconcileNodeReg()
-        if missing:
-            logger.debug("{} found the following missing connections: {}".
-                         format(self, ", ".join(missing)))
-            for name in missing:
-                try:
-                    self.connect(name, ha=self.registry[name])
-                except ValueError as ex:
-                    logger.error('{} cannot connect to {} due to {}'.
-                                 format(self, name, ex))
+        if not missing:
+            return missing
+
+        logger.debug("{} found the following "
+                     "missing connections: {}"
+                     .format(self, ", ".join(missing)))
+
+        for name in missing:
+            try:
+                self.connect(name, ha=self.registry[name])
+            except ValueError as ex:
+                logger.error('{} cannot connect to {} due to {}'
+                             .format(self, name, ex))
         return missing
 
     async def service(self, limit=None):
