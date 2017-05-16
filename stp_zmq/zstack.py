@@ -687,39 +687,28 @@ class ZStack(NetworkInterface):
     def doProcessReceived(self, msg, frm, ident):
         return msg
 
-    def connect(self, name=None, remoteId=None, ha=None, verKeyRaw=None, publicKeyRaw=None):
+    def connect(self,
+                name=None,
+                remoteId=None,
+                ha=None,
+                verKeyRaw=None,
+                publicKeyRaw=None):
         """
         Connect to the node specified by name.
         """
         if not name:
-            raise ValueError('Name needs to be specified')
-        if name not in self.remotes:
-            publicKey = None
-            if not publicKeyRaw:
-                try:
-                    publicKey = self.getPublicKey(name)
-                except KeyError:
-                    raise PublicKeyNotFoundOnDisk(self.name, name)
-            else:
-                publicKey = z85.encode(publicKeyRaw)
+            raise ValueError('Remote name should be specified')
 
-            verKey = None
-            if not verKeyRaw:
-                try:
-                    verKey = self.getVerKey(name)
-                except KeyError:
-                    if self.isRestricted:
-                        raise VerKeyNotFoundOnDisk(self.name, name)
-            else:
-                verKey = z85.encode(verKeyRaw)
-
-            if not (ha and publicKey and (not self.isRestricted or verKey)):
+        if name in self.remotes:
+            remote = self.remotes[name]
+        else:
+            publicKey = z85.encode(publicKeyRaw) if publicKeyRaw else self.getPublicKey(name)
+            verKey = z85.encode(verKeyRaw) if verKeyRaw else self.getVerKey(name)
+            if not ha or not publicKey or (self.isRestricted and not verKey):
                 raise ValueError('{} doesnt have enough info to connect. '
                                  'Need ha, public key and verkey. {} {} {}'.
                                  format(name, ha, verKey, publicKey))
             remote = self.addRemote(name, ha, verKey, publicKey)
-        else:
-            remote = self.remotes[name]
 
         public, secret = self.selfEncKeys
         remote.connect(self.ctx, public, secret)
@@ -737,7 +726,7 @@ class ZStack(NetworkInterface):
         public, secret = self.selfEncKeys
         remote.disconnect()
         remote.connect(self.ctx, public, secret)
-        self.sendPingPong(remote, is_ping=True)
+        # self.sendPingPong(remote, is_ping=True)
 
     def disconnectByName(self, name: str):
         for nm in self.remotes:
@@ -906,7 +895,10 @@ class ZStack(NetworkInterface):
         return hexlify(z85.decode(self.publicKey))
 
     def getPublicKey(self, name):
-        return self.loadPubKeyFromDisk(self.publicKeysDir, name)
+        try:
+            return self.loadPubKeyFromDisk(self.publicKeysDir, name)
+        except KeyError:
+            raise PublicKeyNotFoundOnDisk(self.name, name)
 
     @property
     def verKey(self):
@@ -914,14 +906,23 @@ class ZStack(NetworkInterface):
 
     @property
     def verKeyRaw(self):
-        return z85.decode(self.verKey)
+        if self.verKey:
+            return z85.decode(self.verKey)
+        return None
 
     @property
     def verhex(self):
-        return hexlify(z85.decode(self.verKey))
+        if self.verKey:
+            return hexlify(z85.decode(self.verKey))
+        return None
 
     def getVerKey(self, name):
-        return self.loadPubKeyFromDisk(self.verifKeyDir, name)
+        try:
+            return self.loadPubKeyFromDisk(self.verifKeyDir, name)
+        except KeyError:
+            if self.isRestricted:
+                raise VerKeyNotFoundOnDisk(self.name, name)
+            return None
 
     @property
     def sigKey(self):
@@ -1140,3 +1141,4 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
     async def service(self, limit=None):
         c = await super().service(limit)
         return c
+
