@@ -1142,7 +1142,7 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
         """
 
         matches = set()
-        for name, remote in self.remotes:
+        for name, remote in self.remotes.items():
             if name not in self.registry:
                 continue
             if self.sameAddr(remote.ha, self.registry[name]):
@@ -1153,7 +1153,7 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
 
     def retryDisconnected(self, exclude=None):
         exclude = exclude or {}
-        for name, remote in self.remotes:
+        for name, remote in self.remotes.items():
             if name in exclude or remote.isConnected:
                 continue
             if remote.socket:
