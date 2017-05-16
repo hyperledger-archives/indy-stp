@@ -742,13 +742,15 @@ class ZStack(NetworkInterface):
         self.reconnectRemote(self.remotes[remoteName])
 
     def disconnectByName(self, name: str):
-        for nm in self.remotes:
-            if nm == name:
-                self.remotes[nm].disconnect()
-                return self.remotes[nm]
-        else:
-            logger.warning('{} did not find any remote by name {} to disconnect'.
-                        format(self, name))
+        assert name
+        remote = self.remotes.get(name)
+        if not remote:
+            logger.warning('{} did not find any remote '
+                           'by name {} to disconnect'
+                           .format(self, name))
+            return None
+        remote.disconnect()
+        return remote
 
     def addRemote(self, name, ha, remoteVerkey, remotePublicKey):
         remote = Remote(name, ha, remoteVerkey, remotePublicKey)
