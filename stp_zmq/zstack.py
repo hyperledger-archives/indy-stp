@@ -722,11 +722,24 @@ class ZStack(NetworkInterface):
         return remote.uid
 
     def reconnectRemote(self, remote):
+        """
+        Disconnect remote and connect to it again        
+        
+        :param remote: instance of Remote from self.remotes
+        :param remoteName: name of remote
+        :return: 
+        """
+        assert remote
         logger.debug('{} reconnecting to {}'.format(self, remote))
         public, secret = self.selfEncKeys
         remote.disconnect()
         remote.connect(self.ctx, public, secret)
-        # self.sendPingPong(remote, is_ping=True)
+        self.sendPingPong(remote, is_ping=True)
+
+    def reconnectRemoteWithName(self, remoteName):
+        assert remoteName
+        assert remoteName in self.remotes
+        self.reconnectRemote(self.remotes[remoteName])
 
     def disconnectByName(self, name: str):
         for nm in self.remotes:
