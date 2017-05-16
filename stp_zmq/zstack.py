@@ -1129,12 +1129,13 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
 
     def retryDisconnected(self, exclude=None):
         exclude = exclude or {}
-        for remote in self.remotes.values():
-            if remote.name not in exclude and not remote.isConnected:
-                if not remote.socket:
-                    self.reconnectRemote(remote)
-                else:
-                    self.sendPingPong(remote, is_ping=True)
+        for name, remote in self.remotes:
+            if name in exclude or remote.isConnected:
+                continue
+            if remote.socket:
+                self.sendPingPong(remote, is_ping=True)
+            else:
+                self.reconnectRemote(remote)
 
     def connectToMissing(self):
         """
