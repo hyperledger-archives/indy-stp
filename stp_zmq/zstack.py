@@ -102,8 +102,8 @@ class Remote:
         addr = 'tcp://{}:{}'.format(*self.ha)
         sock.connect(addr)
         self.socket = sock
-        logger.trace('connecting socket {} {}'.
-                     format(self.socket.FD, self.socket.underlying))
+        logger.trace('connecting socket {} {} to remote {}'.
+                     format(self.socket.FD, self.socket.underlying, self))
 
     def disconnect(self):
         logger.debug('disconnecting remote {}'.format(self))
