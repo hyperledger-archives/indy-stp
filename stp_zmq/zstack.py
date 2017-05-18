@@ -102,8 +102,8 @@ class Remote:
         addr = 'tcp://{}:{}'.format(*self.ha)
         sock.connect(addr)
         self.socket = sock
-        logger.trace('connecting socket {} {}'.
-                     format(self.socket.FD, self.socket.underlying))
+        logger.trace('connecting socket {} {} to remote {}'.
+                     format(self.socket.FD, self.socket.underlying, self))
 
     def disconnect(self):
         logger.debug('disconnecting remote {}'.format(self))
@@ -687,39 +687,28 @@ class ZStack(NetworkInterface):
     def doProcessReceived(self, msg, frm, ident):
         return msg
 
-    def connect(self, name=None, remoteId=None, ha=None, verKeyRaw=None, publicKeyRaw=None):
+    def connect(self,
+                name=None,
+                remoteId=None,
+                ha=None,
+                verKeyRaw=None,
+                publicKeyRaw=None):
         """
         Connect to the node specified by name.
         """
         if not name:
-            raise ValueError('Name needs to be specified')
-        if name not in self.remotes:
-            publicKey = None
-            if not publicKeyRaw:
-                try:
-                    publicKey = self.getPublicKey(name)
-                except KeyError:
-                    raise PublicKeyNotFoundOnDisk(self.name, name)
-            else:
-                publicKey = z85.encode(publicKeyRaw)
+            raise ValueError('Remote name should be specified')
 
-            verKey = None
-            if not verKeyRaw:
-                try:
-                    verKey = self.getVerKey(name)
-                except KeyError:
-                    if self.isRestricted:
-                        raise VerKeyNotFoundOnDisk(self.name, name)
-            else:
-                verKey = z85.encode(verKeyRaw)
-
-            if not (ha and publicKey and (not self.isRestricted or verKey)):
+        if name in self.remotes:
+            remote = self.remotes[name]
+        else:
+            publicKey = z85.encode(publicKeyRaw) if publicKeyRaw else self.getPublicKey(name)
+            verKey = z85.encode(verKeyRaw) if verKeyRaw else self.getVerKey(name)
+            if not ha or not publicKey or (self.isRestricted and not verKey):
                 raise ValueError('{} doesnt have enough info to connect. '
                                  'Need ha, public key and verkey. {} {} {}'.
                                  format(name, ha, verKey, publicKey))
             remote = self.addRemote(name, ha, verKey, publicKey)
-        else:
-            remote = self.remotes[name]
 
         public, secret = self.selfEncKeys
         remote.connect(self.ctx, public, secret)
@@ -733,20 +722,35 @@ class ZStack(NetworkInterface):
         return remote.uid
 
     def reconnectRemote(self, remote):
+        """
+        Disconnect remote and connect to it again        
+        
+        :param remote: instance of Remote from self.remotes
+        :param remoteName: name of remote
+        :return: 
+        """
+        assert remote
         logger.debug('{} reconnecting to {}'.format(self, remote))
         public, secret = self.selfEncKeys
         remote.disconnect()
         remote.connect(self.ctx, public, secret)
         self.sendPingPong(remote, is_ping=True)
 
+    def reconnectRemoteWithName(self, remoteName):
+        assert remoteName
+        assert remoteName in self.remotes
+        self.reconnectRemote(self.remotes[remoteName])
+
     def disconnectByName(self, name: str):
-        for nm in self.remotes:
-            if nm == name:
-                self.remotes[nm].disconnect()
-                return self.remotes[nm]
-        else:
-            logger.warning('{} did not find any remote by name {} to disconnect'.
-                        format(self, name))
+        assert name
+        remote = self.remotes.get(name)
+        if not remote:
+            logger.warning('{} did not find any remote '
+                           'by name {} to disconnect'
+                           .format(self, name))
+            return None
+        remote.disconnect()
+        return remote
 
     def addRemote(self, name, ha, remoteVerkey, remotePublicKey):
         remote = Remote(name, ha, remoteVerkey, remotePublicKey)
@@ -906,7 +910,10 @@ class ZStack(NetworkInterface):
         return hexlify(z85.decode(self.publicKey))
 
     def getPublicKey(self, name):
-        return self.loadPubKeyFromDisk(self.publicKeysDir, name)
+        try:
+            return self.loadPubKeyFromDisk(self.publicKeysDir, name)
+        except KeyError:
+            raise PublicKeyNotFoundOnDisk(self.name, name)
 
     @property
     def verKey(self):
@@ -914,14 +921,23 @@ class ZStack(NetworkInterface):
 
     @property
     def verKeyRaw(self):
-        return z85.decode(self.verKey)
+        if self.verKey:
+            return z85.decode(self.verKey)
+        return None
 
     @property
     def verhex(self):
-        return hexlify(z85.decode(self.verKey))
+        if self.verKey:
+            return hexlify(z85.decode(self.verKey))
+        return None
 
     def getVerKey(self, name):
-        return self.loadPubKeyFromDisk(self.verifKeyDir, name)
+        try:
+            return self.loadPubKeyFromDisk(self.verifKeyDir, name)
+        except KeyError:
+            if self.isRestricted:
+                raise VerKeyNotFoundOnDisk(self.name, name)
+            return None
 
     @property
     def sigKey(self):
@@ -1014,13 +1030,6 @@ class ZStack(NetworkInterface):
     def clearRemoteKeeps(self):
         pass
 
-    # def addListener(self, ha):
-    #     pass
-    #
-    # @property
-    # def defaultListener(self):
-    #     pass
-
 
 class DummyKeep:
     def __init__(self, stack, *args, **kwargs):
@@ -1046,9 +1055,16 @@ class DummyKeep:
 
 
 class SimpleZStack(ZStack):
-    def __init__(self, stackParams: Dict, msgHandler: Callable, seed=None,
-                 onlyListener=False, sighex: str=None,
-                 listenerQuota=DEFAULT_LISTENER_QUOTA, remoteQuota=DEFAULT_REMOTE_QUOTA):
+
+    def __init__(self,
+                 stackParams: Dict,
+                 msgHandler: Callable,
+                 seed=None,
+                 onlyListener=False,
+                 sighex: str=None,
+                 listenerQuota=DEFAULT_LISTENER_QUOTA,
+                 remoteQuota=DEFAULT_REMOTE_QUOTA):
+
         # TODO: sighex is unused as of now, remove once test is removed or
         # maybe use sighex to generate all keys, DECISION DEFERRED
 
@@ -1062,12 +1078,16 @@ class SimpleZStack(ZStack):
         basedirpath = stackParams['basedirpath']
 
         auto = stackParams.pop('auth_mode', None)
-        restricted = False if auto == AuthMode.ALLOW_ANY.value else True
-
-        super().__init__(name, ha, basedirpath, msgHandler=self.msgHandler,
-                         restricted=restricted, seed=seed,
+        restricted = auto != AuthMode.ALLOW_ANY.value
+        super().__init__(name,
+                         ha,
+                         basedirpath,
+                         msgHandler=self.msgHandler,
+                         restricted=restricted,
+                         seed=seed,
                          onlyListener=onlyListener,
-                         listenerQuota=listenerQuota, remoteQuota=remoteQuota)
+                         listenerQuota=listenerQuota,
+                         remoteQuota=remoteQuota)
 
 
 class KITZStack(SimpleZStack, KITNetworkInterface):
@@ -1076,67 +1096,93 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
     RETRY_TIMEOUT_NOT_RESTRICTED = 6
     RETRY_TIMEOUT_RESTRICTED = 15
 
-    def __init__(self, stackParams: dict, msgHandler: Callable,
-                 registry: Dict[str, HA], seed=None, sighex: str = None,
-                 listenerQuota=DEFAULT_LISTENER_QUOTA, remoteQuota=DEFAULT_REMOTE_QUOTA):
-        SimpleZStack.__init__(self, stackParams, msgHandler, seed=seed, sighex=sighex,
-                              listenerQuota=listenerQuota, remoteQuota=remoteQuota)
-        KITNetworkInterface.__init__(self, registry=registry)
+    def __init__(self,
+                 stackParams: dict,
+                 msgHandler: Callable,
+                 registry: Dict[str, HA],
+                 seed=None,
+                 sighex: str = None,
+                 listenerQuota=DEFAULT_LISTENER_QUOTA,
+                 remoteQuota=DEFAULT_REMOTE_QUOTA):
+
+        SimpleZStack.__init__(self,
+                              stackParams,
+                              msgHandler,
+                              seed=seed,
+                              sighex=sighex,
+                              listenerQuota=listenerQuota,
+                              remoteQuota=remoteQuota)
+
+        KITNetworkInterface.__init__(self,
+                                     registry=registry)
 
     def maintainConnections(self, force=False):
         """
         Ensure appropriate connections.
 
         """
-        cur = time.perf_counter()
-        if cur > self.nextCheck or force:
+        now = time.perf_counter()
+        if now < self.nextCheck and not force:
+            return False
+        self.nextCheck = now + (self.RETRY_TIMEOUT_NOT_RESTRICTED
+                                if self.isKeySharing
+                                else self.RETRY_TIMEOUT_RESTRICTED)
+        missing = self.connectToMissing()
+        self.retryDisconnected(exclude=missing)
+        logger.debug("{} next check for retries in {:.2f} seconds"
+                     .format(self, self.nextCheck - now))
+        return True
 
-            self.nextCheck = cur + (self.RETRY_TIMEOUT_NOT_RESTRICTED if self.isKeySharing
-                                    else self.RETRY_TIMEOUT_RESTRICTED)
-            missing = self.connectToMissing()
-            self.retryDisconnected(exclude=missing)
-            logger.debug("{} next check for retries in {:.2f} seconds".
-                         format(self, self.nextCheck - cur))
-            return True
-        return False
+    def reconcileNodeReg(self) -> set:
+        """
+        Check whether registry contains some addresses 
+        that were never connected to
+        
+        :return: 
+        """
 
-    def reconcileNodeReg(self):
         matches = set()
-        for r in self.remotes.values():
-            if r.name in self.registry:
-                if self.sameAddr(r.ha, self.registry[r.name]):
-                    matches.add(r.name)
-                    logger.debug("{} matched remote is {} {}".
-                                 format(self, r.uid, r.ha))
-
-        return set(self.registry.keys()) - matches - {self.name,}
+        for name, remote in self.remotes.items():
+            if name not in self.registry:
+                continue
+            if self.sameAddr(remote.ha, self.registry[name]):
+                matches.add(name)
+                logger.debug("{} matched remote {} {}".
+                             format(self, remote.uid, remote.ha))
+        return self.registry.keys() - matches - {self.name}
 
     def retryDisconnected(self, exclude=None):
         exclude = exclude or {}
-        for remote in self.remotes.values():
-            if remote.name not in exclude and not remote.isConnected:
-                if not remote.socket:
-                    self.reconnectRemote(remote)
-                else:
-                    self.sendPingPong(remote, is_ping=True)
+        for name, remote in self.remotes.items():
+            if name in exclude or remote.isConnected:
+                continue
+            if remote.socket:
+                self.sendPingPong(remote, is_ping=True)
+            else:
+                self.reconnectRemote(remote)
 
-    def connectToMissing(self):
+    def connectToMissing(self) -> set:
         """
         Try to connect to the missing nodes
-
         """
+
         missing = self.reconcileNodeReg()
-        if missing:
-            logger.debug("{} found the following missing connections: {}".
-                         format(self, ", ".join(missing)))
-            for name in missing:
-                try:
-                    self.connect(name, ha=self.registry[name])
-                except ValueError as ex:
-                    logger.error('{} cannot connect to {} due to {}'.
-                                 format(self, name, ex))
+        if not missing:
+            return missing
+
+        logger.debug("{} found the following "
+                     "missing connections: {}"
+                     .format(self, ", ".join(missing)))
+
+        for name in missing:
+            try:
+                self.connect(name, ha=self.registry[name])
+            except ValueError as ex:
+                logger.error('{} cannot connect to {} due to {}'
+                             .format(self, name, ex))
         return missing
 
     async def service(self, limit=None):
         c = await super().service(limit)
         return c
+
