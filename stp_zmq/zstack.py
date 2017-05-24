@@ -577,7 +577,14 @@ class ZStack(NetworkInterface):
         #     logger.error('{} got error while '
         #                  'verifying message {} from {}'
         #                  .format(self, msg, ident))
-        self.rxMsgs.append((msg.decode(), ident))
+        try:
+            decoded = msg.decode()
+        except UnicodeDecodeError as ex:
+            logger.error('{} got exception while decoding {} to utf-8: {}'
+                         .format(self, msg, ex))
+            return False
+        self.rxMsgs.append((decoded, ident))
+        return True
 
     def _receiveFromListener(self, quota) -> int:
         """
