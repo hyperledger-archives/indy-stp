@@ -114,9 +114,14 @@ async def eventually(coroFunc: FlexFunc,
                      timeout: float=5,
                      ratchetSteps: Optional[int]=None,
                      acceptableExceptions=None,
-                     verbose=True) -> T:
-    assert timeout < 240, '`eventually` timeout ({:.2f} sec) is huge. ' \
-                             'Is it expected?'.format(timeout)
+                     verbose=True,
+                     override_timeout_limit=False) -> T:
+    if not override_timeout_limit:
+        assert timeout < 240, '`eventually` timeout ({:.2f} sec) is huge. ' \
+                                 'Is it expected?'.format(timeout)
+    else:
+        logger.debug('Overriding timeout limit to {} for evaluating {}'
+                     .format(timeout, coroFunc))
     if acceptableExceptions and not isinstance(acceptableExceptions, Iterable):
             acceptableExceptions = [acceptableExceptions]
     start = time.perf_counter()
