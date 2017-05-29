@@ -47,7 +47,8 @@ async def eventuallyAll(*coroFuncs: FlexFunc, # (use functools.partials if neede
                         totalTimeout: float,
                         retryWait: float=0.1,
                         acceptableExceptions=None,
-                        acceptableFails: int=0):
+                        acceptableFails: int=0,
+                        override_timeout_limit=False):
     """
 
     :param coroFuncs: iterable of no-arg functions
@@ -76,7 +77,8 @@ async def eventuallyAll(*coroFuncs: FlexFunc, # (use functools.partials if neede
                              retryWait=retryWait,
                              timeout=remaining(),
                              acceptableExceptions=acceptableExceptions,
-                             verbose=False)
+                             verbose=False,
+                             override_timeout_limit=override_timeout_limit)
         except Exception:
             fails += 1
             logger.debug("a coro {} timed out without succeeding; fail count: "
@@ -116,6 +118,7 @@ async def eventually(coroFunc: FlexFunc,
                      acceptableExceptions=None,
                      verbose=True,
                      override_timeout_limit=False) -> T:
+    assert timeout > 0, 'Need a timeout value of greater than 0 but got {} instead'.format(timeout)
     if not override_timeout_limit:
         assert timeout < 240, '`eventually` timeout ({:.2f} sec) is huge. ' \
                                  'Is it expected?'.format(timeout)
