@@ -49,8 +49,9 @@ async def eventuallyAll(*coroFuncs: FlexFunc, # (use functools.partials if neede
                         acceptableExceptions=None,
                         acceptableFails: int=0,
                         override_timeout_limit=False):
+    # TODO: Bug when `acceptableFails` > 0 if the first check fails, it will
+    # exhaust the entire timeout.
     """
-
     :param coroFuncs: iterable of no-arg functions
     :param totalTimeout:
     :param retryWait:
@@ -63,9 +64,11 @@ async def eventuallyAll(*coroFuncs: FlexFunc, # (use functools.partials if neede
 
     def remaining():
         return totalTimeout + start - time.perf_counter()
+
     funcNames = []
     others = 0
     fails = 0
+    rem = None
     for cf in coroFuncs:
         if len(funcNames) < 2:
             funcNames.append(getFuncName(cf))
@@ -73,19 +76,30 @@ async def eventuallyAll(*coroFuncs: FlexFunc, # (use functools.partials if neede
             others += 1
         # noinspection PyBroadException
         try:
+            rem = remaining()
+            if rem <= 0:
+                break
             await eventually(cf,
                              retryWait=retryWait,
-                             timeout=remaining(),
+                             timeout=rem,
                              acceptableExceptions=acceptableExceptions,
-                             verbose=False,
+                             verbose=True,
                              override_timeout_limit=override_timeout_limit)
         except Exception:
             fails += 1
-            logger.debug("a coro {} timed out without succeeding; fail count: "
+            logger.debug("a coro {} with args {} timed out without succeeding; fail count: "
                          "{}, acceptable: {}".
-                         format(getFuncName(cf), fails, acceptableFails))
+                         format(getFuncName(cf), get_func_args(cf), fails, acceptableFails))
             if fails > acceptableFails:
                 raise
+
+    if rem is not None and rem <= 0:
+        fails += 1
+        if fails > acceptableFails:
+            err= 'All checks could not complete successfully since total timeout ' \
+                 'expired {} sec ago'.format(-1*rem if rem<0 else 0)
+            raise Exception(err)
+
     if others:
         funcNames.append("and {} others".format(others))
     desc = ", ".join(funcNames)
@@ -100,6 +114,10 @@ def getFuncName(f):
         return "partial({})".format(getFuncName(f.func))
     else:
         return "<unknown>"
+
+
+def get_func_args(f):
+    return f.args
 
 
 def recordFail(fname, timeout):
@@ -161,10 +179,11 @@ async def eventually(coroFunc: FlexFunc,
             if acceptableExceptions and type(ex) not in acceptableExceptions:
                 raise
             if remain >= 0:
+                sleep_dur = next(ratchet) if ratchet else retryWait
                 if verbose:
                     logger.trace("{} not succeeded yet, {:.2f} seconds "
-                                 "remaining...".format(fname, remain))
-                await asyncio.sleep(next(ratchet) if ratchet else retryWait)
+                                 "remaining..., will sleep for {}".format(fname, remain, sleep_dur))
+                await asyncio.sleep(sleep_dur)
             else:
                 recordFail(fname, timeout)
                 logger.error("{} failed; not trying any more because {} "
