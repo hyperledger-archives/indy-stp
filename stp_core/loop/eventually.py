@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import os
 import time
 from asyncio.coroutines import CoroWrapper
@@ -117,7 +118,10 @@ def getFuncName(f):
 
 
 def get_func_args(f):
-    return f.args
+    if hasattr(f, 'args'):
+        return f.args
+    else:
+        return list(inspect.signature(f).parameters)
 
 
 def recordFail(fname, timeout):
