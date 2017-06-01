@@ -4,6 +4,7 @@ import time
 from asyncio.coroutines import CoroWrapper
 from inspect import isawaitable
 from typing import Callable, TypeVar, Optional, Iterable
+import psutil
 
 from stp_core.common.log import getlogger
 from stp_core.ratchet import Ratchet
@@ -17,23 +18,28 @@ logger = getlogger()
 FlexFunc = TypeVar('flexFunc', CoroWrapper, Callable[[], T])
 
 
+def isMinimalConfiguration():
+    mem = psutil.virtual_memory()
+    memAvailableGb = mem.available / (1024 * 1024 * 1024)
+    cpuCount = psutil.cpu_count()
+    # we can have a 8 cpu but 100Mb free RAM and the tests will be slow
+    return memAvailableGb <= 1.5  # and cpuCount == 1
+
+
 # increase this number to allow eventually to change timeouts proportionatly
 def getSlowFactor():
-    numOfCpus = os.cpu_count()
-    if numOfCpus == 8 or numOfCpus is None:
-        return 1
-    elif numOfCpus == 4:
+    if isMinimalConfiguration():
         return 1.5
-    elif numOfCpus < 4:
-        return 2
+    else:
+        return 1
 
 slowFactor = getSlowFactor()
 
 
 async def eventuallySoon(coroFunc: FlexFunc, *args):
     return await eventually(coroFunc, *args,
-                            retryWait=0.1 * slowFactor,
-                            timeout=3 * slowFactor,
+                            retryWait=0.1,
+                            timeout=3,
                             ratchetSteps=10)
 
 
@@ -54,8 +60,6 @@ async def eventuallyAll(*coroFuncs: FlexFunc, # (use functools.partials if neede
     """
     start = time.perf_counter()
 
-    totalTimeout *= slowFactor
-
     def remaining():
         return totalTimeout + start - time.perf_counter()
     funcNames = []
@@ -69,7 +73,7 @@ async def eventuallyAll(*coroFuncs: FlexFunc, # (use functools.partials if neede
         # noinspection PyBroadException
         try:
             await eventually(cf,
-                             retryWait=retryWait * slowFactor,
+                             retryWait=retryWait,
                              timeout=remaining(),
                              acceptableExceptions=acceptableExceptions,
                              verbose=False)
@@ -110,8 +114,14 @@ async def eventually(coroFunc: FlexFunc,
                      timeout: float=5,
                      ratchetSteps: Optional[int]=None,
                      acceptableExceptions=None,
-                     verbose=True) -> T:
-
+                     verbose=True,
+                     override_timeout_limit=False) -> T:
+    if not override_timeout_limit:
+        assert timeout < 240, '`eventually` timeout ({:.2f} sec) is huge. ' \
+                                 'Is it expected?'.format(timeout)
+    else:
+        logger.debug('Overriding timeout limit to {} for evaluating {}'
+                     .format(timeout, coroFunc))
     if acceptableExceptions and not isinstance(acceptableExceptions, Iterable):
             acceptableExceptions = [acceptableExceptions]
     start = time.perf_counter()

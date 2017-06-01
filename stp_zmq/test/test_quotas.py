@@ -36,6 +36,7 @@ def testMessageQuota(tdir, looper):
     looper.run(eventually(checkAllReceived, retryWait=0.5,
                           timeout=5))
 
+
 def testManyMessages(tdir, looper):
     names = ['Alpha', 'Beta']
     genKeys(tdir, names)

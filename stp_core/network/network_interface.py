@@ -90,16 +90,19 @@ class NetworkInterface:
         raise NotImplementedError
 
     @abstractmethod
-    def connect(self, name=None, remoteId=None, ha=None, verKeyRaw=None, publicKeyRaw=None):
+    def connect(self, name=None, remoteId=None, ha=None, verKeyRaw=None,
+                publicKeyRaw=None):
         raise NotImplementedError
 
     @abstractmethod
     def send(self, msg, remote: str = None, ha=None):
         raise NotImplementedError
 
-    def connectIfNotConnected(self, name=None, remoteId=None, ha=None, verKeyRaw=None, publicKeyRaw=None):
+    def connectIfNotConnected(self, name=None, remoteId=None, ha=None,
+                              verKeyRaw=None, publicKeyRaw=None):
         if not self.isConnectedTo(name=name, ha=ha):
-            self.connect(name=name, remoteId=remoteId, ha=ha, verKeyRaw=verKeyRaw, publicKeyRaw=publicKeyRaw)
+            self.connect(name=name, remoteId=remoteId, ha=ha,
+                         verKeyRaw=verKeyRaw, publicKeyRaw=publicKeyRaw)
         else:
             logger.debug('{} already connected {}'.format(self.name, ha))
 
@@ -107,7 +110,9 @@ class NetworkInterface:
     @property
     def connecteds(self) -> Set[str]:
         """
-        Return the names of the remote nodes this node is connected to. Not all of these nodes may be used for communication (as opposed to conns property)
+        Return the names of the remote nodes this node is connected to.
+        Not all of these nodes may be used for communication
+         (as opposed to conns property)
         """
         return {r.name for r in self.remotes.values()
                 if self.isRemoteConnected(r)}
@@ -119,14 +124,12 @@ class NetworkInterface:
         """
         return time.perf_counter() - self.created
 
-
     def isConnectedTo(self, name: str = None, ha: HA = None):
         try:
             remote = self.getRemote(name, ha)
         except RemoteNotFound:
             return False
         return self.isRemoteConnected(remote)
-
 
     def getRemote(self, name: str = None, ha: HA = None):
         """

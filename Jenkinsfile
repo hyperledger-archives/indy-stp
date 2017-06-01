@@ -1,4 +1,4 @@
-#!groovy​
+#!groovy
 
 @Library('SovrinHelpers') _
 
@@ -49,5 +49,4 @@ def testWindowsNoDocker = {
     }
 }
 
-testAndPublish(name, [ubuntu: testUbuntu, windows: testWindowsNoDocker, windowsNoDocker: testWindowsNoDocker])
-
+testAndPublish(name, [ubuntu: testUbuntu])

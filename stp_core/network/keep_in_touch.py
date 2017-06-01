@@ -8,6 +8,7 @@ from stp_core.types import HA
 
 logger = getlogger()
 
+
 class KITNetworkInterface:
     # Keep In Touch Stack which maintains connections mentioned in
     # its registry
@@ -104,13 +105,11 @@ class KITNetworkInterface:
 
         self.onConnsChanged(ins, outs)
 
-
     def onConnsChanged(self, ins: Set[str], outs: Set[str]):
         """
         Subclasses can override
         """
         pass
-
 
     def findInNodeRegByHA(self, remoteHa):
         """
@@ -125,7 +124,6 @@ class KITNetworkInterface:
         if regName:
             return regName[0]
         return None
-
 
     def getRemoteName(self, remote):
         """

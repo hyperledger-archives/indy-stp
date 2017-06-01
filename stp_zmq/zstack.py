@@ -1,6 +1,10 @@
 import inspect
 
-import ujson as json
+try:
+    import ujson as json
+except ImportError:
+    import json
+
 import os
 import shutil
 import sys
@@ -8,7 +12,7 @@ import time
 from abc import abstractmethod
 from binascii import hexlify, unhexlify
 from collections import deque
-from typing import Dict, Mapping, Callable, Tuple, Any
+from typing import Dict, Mapping, Callable, Tuple, Any, Union
 from typing import Set
 
 # import stp_zmq.asyncio
@@ -59,6 +63,8 @@ class Remote:
 
         self._numOfReconnects = 0
         self._isConnected = False
+        self._lastConnectedAt = None
+
         # Currently keeping uid field to resemble RAET RemoteEstate
         self.uid = name
 
@@ -78,6 +84,7 @@ class Remote:
     def setConnected(self):
         self._numOfReconnects += 1
         self._isConnected = True
+        self._lastConnectedAt = time.perf_counter()
 
     def firstConnect(self):
         return self._numOfReconnects == 0
@@ -95,8 +102,8 @@ class Remote:
         addr = 'tcp://{}:{}'.format(*self.ha)
         sock.connect(addr)
         self.socket = sock
-        logger.trace('connecting socket {} {}'.
-                     format(self.socket.FD, self.socket.underlying))
+        logger.trace('connecting socket {} {} to remote {}'.
+                     format(self.socket.FD, self.socket.underlying, self))
 
     def disconnect(self):
         logger.debug('disconnecting remote {}'.format(self))
@@ -116,9 +123,7 @@ class Remote:
             logger.debug('{} close was called on a null socket, maybe close is '
                          'being called twice.'.format(self))
 
-
         self._isConnected = False
-
 
     @property
     def hasLostConnection(self):
@@ -572,7 +577,14 @@ class ZStack(NetworkInterface):
         #     logger.error('{} got error while '
         #                  'verifying message {} from {}'
         #                  .format(self, msg, ident))
-        self.rxMsgs.append((msg.decode(), ident))
+        try:
+            decoded = msg.decode()
+        except UnicodeDecodeError as ex:
+            logger.error('{} got exception while decoding {} to utf-8: {}'
+                         .format(self, msg, ex))
+            return False
+        self.rxMsgs.append((decoded, ident))
+        return True
 
     def _receiveFromListener(self, quota) -> int:
         """
@@ -652,7 +664,7 @@ class ZStack(NetworkInterface):
                     continue
 
                 try:
-                    msg = json.loads(msg)
+                    msg = self.deserializeMsg(msg)
                 except Exception as e:
                     logger.error('Error {} while converting message {} '
                                  'to JSON from {}'.format(e, msg, ident))
@@ -669,11 +681,7 @@ class ZStack(NetworkInterface):
         if msg in (self.pingMessage, self.pongMessage):
             if msg == self.pingMessage:
                 logger.debug('{} got ping from {}'.format(self, frm))
-
-                if self.send(self.pongMessage, frm):
-                    logger.debug('{} sent pong to {}'.format(self, frm))
-                else:
-                    logger.debug('{} failed to pong {}'.format(self, frm))
+                self.sendPingPong(frm, is_ping=False)
 
             if msg == self.pongMessage:
                 if ident in self.remotesByKeys:
@@ -686,39 +694,28 @@ class ZStack(NetworkInterface):
     def doProcessReceived(self, msg, frm, ident):
         return msg
 
-    def connect(self, name=None, remoteId=None, ha=None, verKeyRaw=None, publicKeyRaw=None):
+    def connect(self,
+                name=None,
+                remoteId=None,
+                ha=None,
+                verKeyRaw=None,
+                publicKeyRaw=None):
         """
         Connect to the node specified by name.
         """
         if not name:
-            raise ValueError('Name needs to be specified')
-        if name not in self.remotes:
-            publicKey = None
-            if not publicKeyRaw:
-                try:
-                    publicKey = self.getPublicKey(name)
-                except KeyError:
-                    raise PublicKeyNotFoundOnDisk(self.name, name)
-            else:
-                publicKey = z85.encode(publicKeyRaw)
+            raise ValueError('Remote name should be specified')
 
-            verKey = None
-            if not verKeyRaw:
-                try:
-                    verKey = self.getVerKey(name)
-                except KeyError:
-                    if self.isRestricted:
-                        raise VerKeyNotFoundOnDisk(self.name, name)
-            else:
-                verKey = z85.encode(verKeyRaw)
-
-            if not (ha and publicKey and (not self.isRestricted or verKey)):
+        if name in self.remotes:
+            remote = self.remotes[name]
+        else:
+            publicKey = z85.encode(publicKeyRaw) if publicKeyRaw else self.getPublicKey(name)
+            verKey = z85.encode(verKeyRaw) if verKeyRaw else self.getVerKey(name)
+            if not ha or not publicKey or (self.isRestricted and not verKey):
                 raise ValueError('{} doesnt have enough info to connect. '
                                  'Need ha, public key and verkey. {} {} {}'.
                                  format(name, ha, verKey, publicKey))
             remote = self.addRemote(name, ha, verKey, publicKey)
-        else:
-            remote = self.remotes[name]
 
         public, secret = self.selfEncKeys
         remote.connect(self.ctx, public, secret)
@@ -728,24 +725,39 @@ class ZStack(NetworkInterface):
                     extra={"cli": "PLAIN", "tags": ["node-looking"]})
 
         # This should be scheduled as an async task
-        self.sendPing(remote)
+        self.sendPingPong(remote, is_ping=True)
         return remote.uid
 
     def reconnectRemote(self, remote):
+        """
+        Disconnect remote and connect to it again        
+        
+        :param remote: instance of Remote from self.remotes
+        :param remoteName: name of remote
+        :return: 
+        """
+        assert remote
         logger.debug('{} reconnecting to {}'.format(self, remote))
         public, secret = self.selfEncKeys
         remote.disconnect()
         remote.connect(self.ctx, public, secret)
-        self.sendPing(remote)
+        self.sendPingPong(remote, is_ping=True)
+
+    def reconnectRemoteWithName(self, remoteName):
+        assert remoteName
+        assert remoteName in self.remotes
+        self.reconnectRemote(self.remotes[remoteName])
 
     def disconnectByName(self, name: str):
-        for nm in self.remotes:
-            if nm == name:
-                self.remotes[nm].disconnect()
-                return self.remotes[nm]
-        else:
-            logger.warning('{} did not find any remote by name {} to disconnect'.
-                        format(self, name))
+        assert name
+        remote = self.remotes.get(name)
+        if not remote:
+            logger.warning('{} did not find any remote '
+                           'by name {} to disconnect'
+                           .format(self, name))
+            return None
+        remote.disconnect()
+        return remote
 
     def addRemote(self, name, ha, remoteVerkey, remotePublicKey):
         remote = Remote(name, ha, remoteVerkey, remotePublicKey)
@@ -759,23 +771,24 @@ class ZStack(NetworkInterface):
                          format(self, name, ha))
         return remote
 
-
-    def sendPing(self, remote):
-        r = self.send(self.pingMessage, remote.name)
+    def sendPingPong(self, remote: Union[str, Remote], is_ping=True):
+        msg = self.pingMessage if is_ping else self.pongMessage
+        action = 'ping' if is_ping else 'pong'
+        name = remote if isinstance(remote, (str, bytes)) else remote.name
+        r = self.send(msg, name)
         if r is True:
-            logger.debug('{} pinged {} at {}'.format(self.name, remote.name,
-                                                     self.ha))
+            logger.debug('{} {}ed {}'.format(self.name, action, name))
         elif r is False:
             # TODO: This fails the first time as socket is not established,
             # need to make it retriable
-            logger.info('{} failed to ping {} at {}'.
-                        format(self.name, remote.name, remote.ha),
+            logger.info('{} failed to {} {}'.
+                        format(self.name, action, name),
                         extra={"cli": False})
         elif r is None:
             logger.debug('{} will be sending in batch'.format(self))
         else:
             logger.warn('{} got an unexpected return value {} while sending'.
-                         format(self, r))
+                        format(self, r))
         return r
 
     def send(self, msg: Any, remoteName: str = None, ha=None):
@@ -784,24 +797,27 @@ class ZStack(NetworkInterface):
         else:
             if remoteName is None:
                 r = []
+                # Serializing beforehand since to avoid serializing for each
+                # remote
+                msg = self.serializeMsg(msg)
                 for uid in self.remotes:
-                    r.append(self.transmit(msg, uid))
+                    r.append(self.transmit(msg, uid, serialized=True))
                 return all(r)
             else:
                 return self.transmit(msg, remoteName)
 
-    def transmit(self, msg, uid, timeout=None):
+    def transmit(self, msg, uid, timeout=None, serialized=False):
         remote = self.remotes.get(uid)
         if not remote:
             logger.debug("Remote {} does not exist!".format(uid))
             return False
         socket = remote.socket
         if not socket:
-            logger.debug('{} has uninitialised socket '
-                         'for remote {}'.format(self, uid))
+            logger.warning('{} has uninitialised socket '
+                           'for remote {}'.format(self, uid))
             return False
         try:
-            msg = self.prepMsg(msg)
+            msg = self.serializeMsg(msg) if not serialized else msg
             # socket.send(self.signedMsg(msg), flags=zmq.NOBLOCK)
             socket.send(msg, flags=zmq.NOBLOCK)
             logger.debug('{} transmitting message {} to {}'
@@ -826,7 +842,7 @@ class ZStack(NetworkInterface):
             logger.debug("This is a temporary workaround for not being able to "
                          "disconnect a ROUTER's remote")
             return False
-        msg = self.prepMsg(msg)
+        msg = self.serializeMsg(msg)
         try:
             # noinspection PyUnresolvedReferences
             # self.listener.send_multipart([ident, self.signedMsg(msg)],
@@ -840,7 +856,7 @@ class ZStack(NetworkInterface):
                          format(self, e, ident))
 
     @staticmethod
-    def prepMsg(msg):
+    def serializeMsg(msg):
         if isinstance(msg, Mapping):
             msg = json.dumps(msg)
         if isinstance(msg, str):
@@ -848,10 +864,15 @@ class ZStack(NetworkInterface):
         assert isinstance(msg, bytes)
         return msg
 
+    @staticmethod
+    def deserializeMsg(msg):
+        if isinstance(msg, bytes):
+            msg = msg.decode()
+        msg = json.loads(msg)
+        return msg
+
     def signedMsg(self, msg: bytes, signer: Signer=None):
-        # Just disabling signing for measuring how much is load testing impacted
-        # sig = self.signer.signature(msg)
-        sig = b'1111111111111111111111111111111111111111111111111111111111111111'
+        sig = self.signer.signature(msg)
         return msg + sig
 
     def verify(self, msg, by):
@@ -896,7 +917,10 @@ class ZStack(NetworkInterface):
         return hexlify(z85.decode(self.publicKey))
 
     def getPublicKey(self, name):
-        return self.loadPubKeyFromDisk(self.publicKeysDir, name)
+        try:
+            return self.loadPubKeyFromDisk(self.publicKeysDir, name)
+        except KeyError:
+            raise PublicKeyNotFoundOnDisk(self.name, name)
 
     @property
     def verKey(self):
@@ -904,14 +928,23 @@ class ZStack(NetworkInterface):
 
     @property
     def verKeyRaw(self):
-        return z85.decode(self.verKey)
+        if self.verKey:
+            return z85.decode(self.verKey)
+        return None
 
     @property
     def verhex(self):
-        return hexlify(z85.decode(self.verKey))
+        if self.verKey:
+            return hexlify(z85.decode(self.verKey))
+        return None
 
     def getVerKey(self, name):
-        return self.loadPubKeyFromDisk(self.verifKeyDir, name)
+        try:
+            return self.loadPubKeyFromDisk(self.verifKeyDir, name)
+        except KeyError:
+            if self.isRestricted:
+                raise VerKeyNotFoundOnDisk(self.name, name)
+            return None
 
     @property
     def sigKey(self):
@@ -942,7 +975,8 @@ class ZStack(NetworkInterface):
 
     def setRestricted(self, restricted: bool):
         if self.isRestricted != restricted:
-            logger.debug('{} setting restricted to {}'.format(self, restricted))
+            logger.debug('{} setting restricted to {}'.
+                         format(self, restricted))
             self.stop()
 
             # TODO: REMOVE, it will make code slow, only doing to allow the
@@ -1003,13 +1037,6 @@ class ZStack(NetworkInterface):
     def clearRemoteKeeps(self):
         pass
 
-    # def addListener(self, ha):
-    #     pass
-    #
-    # @property
-    # def defaultListener(self):
-    #     pass
-
 
 class DummyKeep:
     def __init__(self, stack, *args, **kwargs):
@@ -1035,9 +1062,16 @@ class DummyKeep:
 
 
 class SimpleZStack(ZStack):
-    def __init__(self, stackParams: Dict, msgHandler: Callable, seed=None,
-                 onlyListener=False, sighex: str=None,
-                 listenerQuota=DEFAULT_LISTENER_QUOTA, remoteQuota=DEFAULT_REMOTE_QUOTA):
+
+    def __init__(self,
+                 stackParams: Dict,
+                 msgHandler: Callable,
+                 seed=None,
+                 onlyListener=False,
+                 sighex: str=None,
+                 listenerQuota=DEFAULT_LISTENER_QUOTA,
+                 remoteQuota=DEFAULT_REMOTE_QUOTA):
+
         # TODO: sighex is unused as of now, remove once test is removed or
         # maybe use sighex to generate all keys, DECISION DEFERRED
 
@@ -1051,12 +1085,16 @@ class SimpleZStack(ZStack):
         basedirpath = stackParams['basedirpath']
 
         auto = stackParams.pop('auth_mode', None)
-        restricted = False if auto == AuthMode.ALLOW_ANY.value else True
-
-        super().__init__(name, ha, basedirpath, msgHandler=self.msgHandler,
-                         restricted=restricted, seed=seed,
+        restricted = auto != AuthMode.ALLOW_ANY.value
+        super().__init__(name,
+                         ha,
+                         basedirpath,
+                         msgHandler=self.msgHandler,
+                         restricted=restricted,
+                         seed=seed,
                          onlyListener=onlyListener,
-                         listenerQuota=listenerQuota, remoteQuota=remoteQuota)
+                         listenerQuota=listenerQuota,
+                         remoteQuota=remoteQuota)
 
 
 class KITZStack(SimpleZStack, KITNetworkInterface):
@@ -1065,64 +1103,93 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
     RETRY_TIMEOUT_NOT_RESTRICTED = 6
     RETRY_TIMEOUT_RESTRICTED = 15
 
-    def __init__(self, stackParams: dict, msgHandler: Callable,
-                 registry: Dict[str, HA], seed=None, sighex: str = None,
-                 listenerQuota=DEFAULT_LISTENER_QUOTA, remoteQuota=DEFAULT_REMOTE_QUOTA):
-        SimpleZStack.__init__(self, stackParams, msgHandler, seed=seed, sighex=sighex,
-                              listenerQuota=listenerQuota, remoteQuota=remoteQuota)
-        KITNetworkInterface.__init__(self, registry=registry)
+    def __init__(self,
+                 stackParams: dict,
+                 msgHandler: Callable,
+                 registry: Dict[str, HA],
+                 seed=None,
+                 sighex: str = None,
+                 listenerQuota=DEFAULT_LISTENER_QUOTA,
+                 remoteQuota=DEFAULT_REMOTE_QUOTA):
+
+        SimpleZStack.__init__(self,
+                              stackParams,
+                              msgHandler,
+                              seed=seed,
+                              sighex=sighex,
+                              listenerQuota=listenerQuota,
+                              remoteQuota=remoteQuota)
+
+        KITNetworkInterface.__init__(self,
+                                     registry=registry)
 
     def maintainConnections(self, force=False):
         """
         Ensure appropriate connections.
 
         """
-        cur = time.perf_counter()
-        if cur > self.nextCheck or force:
+        now = time.perf_counter()
+        if now < self.nextCheck and not force:
+            return False
+        self.nextCheck = now + (self.RETRY_TIMEOUT_NOT_RESTRICTED
+                                if self.isKeySharing
+                                else self.RETRY_TIMEOUT_RESTRICTED)
+        missing = self.connectToMissing()
+        self.retryDisconnected(exclude=missing)
+        logger.debug("{} next check for retries in {:.2f} seconds"
+                     .format(self, self.nextCheck - now))
+        return True
 
-            self.nextCheck = cur + (self.RETRY_TIMEOUT_NOT_RESTRICTED if self.isKeySharing
-                                    else self.RETRY_TIMEOUT_RESTRICTED)
-            missing = self.connectToMissing()
-            self.retryDisconnected(exclude=missing)
-            logger.debug("{} next check for retries in {:.2f} seconds".
-                         format(self, self.nextCheck - cur))
-            return True
-        return False
+    def reconcileNodeReg(self) -> set:
+        """
+        Check whether registry contains some addresses 
+        that were never connected to
+        
+        :return: 
+        """
 
-    def reconcileNodeReg(self):
         matches = set()
-        for r in self.remotes.values():
-            if r.name in self.registry:
-                if self.sameAddr(r.ha, self.registry[r.name]):
-                    matches.add(r.name)
-                    logger.debug("{} matched remote is {} {}".
-                                 format(self, r.uid, r.ha))
-
-        return set(self.registry.keys()) - matches - {self.name,}
+        for name, remote in self.remotes.items():
+            if name not in self.registry:
+                continue
+            if self.sameAddr(remote.ha, self.registry[name]):
+                matches.add(name)
+                logger.debug("{} matched remote {} {}".
+                             format(self, remote.uid, remote.ha))
+        return self.registry.keys() - matches - {self.name}
 
     def retryDisconnected(self, exclude=None):
         exclude = exclude or {}
-        for remote in self.remotes.values():
-            if remote.name not in exclude and not remote.isConnected:
+        for name, remote in self.remotes.items():
+            if name in exclude or remote.isConnected:
+                continue
+            if remote.socket:
+                self.sendPingPong(remote, is_ping=True)
+            else:
                 self.reconnectRemote(remote)
 
-    def connectToMissing(self):
+    def connectToMissing(self) -> set:
         """
         Try to connect to the missing nodes
-
         """
+
         missing = self.reconcileNodeReg()
-        if missing:
-            logger.debug("{} found the following missing connections: {}".
-                         format(self, ", ".join(missing)))
-            for name in missing:
-                try:
-                    self.connect(name, ha=self.registry[name])
-                except ValueError as ex:
-                    logger.error('{} cannot connect to {} due to {}'.
-                                 format(self, name, ex))
+        if not missing:
+            return missing
+
+        logger.debug("{} found the following "
+                     "missing connections: {}"
+                     .format(self, ", ".join(missing)))
+
+        for name in missing:
+            try:
+                self.connect(name, ha=self.registry[name])
+            except ValueError as ex:
+                logger.error('{} cannot connect to {} due to {}'
+                             .format(self, name, ex))
         return missing
 
     async def service(self, limit=None):
         c = await super().service(limit)
         return c
+
