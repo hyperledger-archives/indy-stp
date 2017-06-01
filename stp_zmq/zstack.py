@@ -34,6 +34,8 @@ from stp_core.types import HA
 from stp_zmq.util import createEncAndSigKeys, \
     moveKeyFilesToCorrectLocations, createCertsFromKeys
 
+import base58
+
 logger = getlogger()
 
 DEFAULT_LISTENER_QUOTA = 100
@@ -309,6 +311,8 @@ class ZStack(NetworkInterface):
 
         if isHex(verkey):
             verkey = unhexlify(verkey)
+        else:
+            verkey = base58.b58decode(verkey)
 
         createCertsFromKeys(verifDirPath, remoteName, z85.encode(verkey))
         public_key = ed25519PkToCurve25519(verkey)
