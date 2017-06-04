@@ -1122,6 +1122,7 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
 
         KITNetworkInterface.__init__(self,
                                      registry=registry)
+        self._retry_connect = {}
 
     def maintainConnections(self, force=False):
         """
@@ -1163,10 +1164,17 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
         for name, remote in self.remotes.items():
             if name in exclude or remote.isConnected:
                 continue
-            if remote.socket:
-                self.sendPingPong(remote, is_ping=True)
-            else:
-                self.reconnectRemote(remote)
+
+            if not name in self._retry_connect:
+                self._retry_connect[name] = 0
+
+            # if remote.socket:
+            #     self.sendPingPong(remote, is_ping=True)
+            # else:
+            #     self.reconnectRemote(remote)
+
+            # TODO: try to send ping X times, then call reconnectRemote
+            self.reconnectRemote(remote)
 
     def connectToMissing(self) -> set:
         """
