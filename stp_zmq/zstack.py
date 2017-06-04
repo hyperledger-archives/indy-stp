@@ -1,5 +1,8 @@
 import inspect
 
+from zmq import Context
+from zmq import Socket
+
 try:
     import ujson as json
 except ImportError:
@@ -57,7 +60,7 @@ class Remote:
         self.publicKey = publicKey
         # self.verKey is the verification key of the other end of the remote
         self.verKey = verKey
-        self.socket = None
+        self.socket = None  # type: Socket
         # TODO: A stack should have a monitor and it should identify remote
         # by endpoint
 
@@ -89,9 +92,9 @@ class Remote:
     def firstConnect(self):
         return self._numOfReconnects == 0
 
-    def connect(self, context, localPubKey, localSecKey, typ=None):
+    def connect(self, context: Context, localPubKey, localSecKey, typ=None):
         typ = typ or zmq.DEALER
-        sock = context.socket(typ)
+        sock = context.socket(typ)  # type: Socket
         sock.curve_publickey = localPubKey
         sock.curve_secretkey = localSecKey
         sock.curve_serverkey = self.publicKey
@@ -99,6 +102,7 @@ class Remote:
         # sock.setsockopt(test.PROBE_ROUTER, 1)
         sock.setsockopt(zmq.TCP_KEEPALIVE, 1)
         sock.setsockopt(zmq.TCP_KEEPALIVE_INTVL, 1000)
+
         addr = 'tcp://{}:{}'.format(*self.ha)
         sock.connect(addr)
         self.socket = sock
@@ -442,7 +446,7 @@ class ZStack(NetworkInterface):
 
     def start(self, restricted=None, reSetupAuth=True):
         # self.ctx = test.asyncio.Context.instance()
-        self.ctx = zmq.Context.instance()
+        self.ctx = zmq.Context()
         if self.MAX_SOCKETS:
             self.ctx.MAX_SOCKETS = self.MAX_SOCKETS
         restricted = self.restricted if restricted is None else restricted
@@ -460,6 +464,7 @@ class ZStack(NetworkInterface):
         self.teardownAuth()
         logger.info("stack {} stopped".format(self),
                     extra={"cli": False, "demo": False})
+        self.ctx.term()
 
     @property
     def opened(self):
@@ -787,8 +792,8 @@ class ZStack(NetworkInterface):
         elif r is None:
             logger.debug('{} will be sending in batch'.format(self))
         else:
-            logger.warn('{} got an unexpected return value {} while sending'.
-                        format(self, r))
+            logger.warning('{} got an unexpected return value {} while sending'.
+                           format(self, r))
         return r
 
     def send(self, msg: Any, remoteName: str = None, ha=None):
@@ -808,30 +813,32 @@ class ZStack(NetworkInterface):
 
     def transmit(self, msg, uid, timeout=None, serialized=False):
         remote = self.remotes.get(uid)
+        cant = ""
         if not remote:
-            logger.debug("Remote {} does not exist!".format(uid))
-            return False
-        socket = remote.socket
-        if not socket:
-            logger.warning('{} has uninitialised socket '
-                           'for remote {}'.format(self, uid))
-            return False
-        try:
+            cant = "remote does not exist"
+        elif not remote.socket:
+            cant = "uninitialized socket"
+        # elif not remote.isConnected and msg not in self.healthMessages:
+        #     cant = "not connected"
+            # and msg not in self.healthMessages
+            # logger.warning(
+            #     '{} unable to transmit msg to remote {} is not connected - '
+            #     'message will not be sent immediately.'
+            #     'If this problem does not resolve itself - '
+            #     'check your firewall settings'.format(uid))
+        else:
             msg = self.serializeMsg(msg) if not serialized else msg
-            # socket.send(self.signedMsg(msg), flags=zmq.NOBLOCK)
-            socket.send(msg, flags=zmq.NOBLOCK)
-            logger.debug('{} transmitting message {} to {}'
-                        .format(self, msg, uid))
-            if not remote.isConnected and msg not in self.healthMessages:
-                logger.warning('Remote {} is not connected - '
-                               'message will not be sent immediately.'
-                               'If this problem does not resolve itself - '
-                               'check your firewall settings'.format(uid))
-            return True
-        except zmq.Again:
-            logger.info('{} could not transmit message to {}'
-                        .format(self, uid))
-        return False
+            logger.debug('{} transmitting message {} to {}'.
+                         format(self, msg, uid))
+            try:
+                remote.socket.send(msg, flags=zmq.NOBLOCK)
+            except zmq.Again:
+                cant = "cannot be queued on socket"
+        if cant:
+            logger.warning('{} could not transmit message to {}: {}'.
+                               format(self, uid, cant))
+            return False
+        return True
 
     def transmitThroughListener(self, msg, ident):
         if isinstance(ident, str):
