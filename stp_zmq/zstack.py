@@ -787,7 +787,7 @@ class ZStack(NetworkInterface):
         elif r is None:
             logger.debug('{} will be sending in batch'.format(self))
         else:
-            logger.warn('{} got an unexpected return value {} while sending'.
+            logger.warning('{} got an unexpected return value {} while sending'.
                         format(self, r))
         return r
 
@@ -847,6 +847,8 @@ class ZStack(NetworkInterface):
             # noinspection PyUnresolvedReferences
             # self.listener.send_multipart([ident, self.signedMsg(msg)],
             #                              flags=zmq.NOBLOCK)
+            logger.trace('{} transmitting {} to {} through listener socket'.
+                         format(self, msg, ident))
             self.listener.send_multipart([ident, msg], flags=zmq.NOBLOCK)
             return True
         except zmq.Again:
