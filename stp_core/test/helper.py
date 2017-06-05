@@ -70,13 +70,15 @@ class SMotor(Motor):
 
 
 def prepStacks(looper, *stacks, connect=True, useKeys=True):
+    motors = []
     for stack in stacks:
         motor = SMotor(stack)
         looper.add(motor)
+        motors.append(motor)
     if connect:
         connectStacks(stacks, useKeys)
         looper.runFor(1)
-
+    return motors
 
 def connectStacks(stacks, useKeys=True):
     for stack in stacks:
@@ -93,6 +95,13 @@ def checkStacksConnected(stacks):
             if stack != otherStack:
                 assert stack.isConnectedTo(otherStack.name)
 
+def checkStackConnected(stack, stacks):
+    for other in stacks:
+        assert stack.isConnectedTo(other.name)
+
+def checkStackDisonnected(stack, stacks):
+    for other in stacks:
+        assert not stack.isConnectedTo(other.name)
 
 class MessageSender(Motor):
     def __init__(self, numMsgs, fromStack, toName):
