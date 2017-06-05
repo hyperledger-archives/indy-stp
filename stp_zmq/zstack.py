@@ -1102,6 +1102,7 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
 
     RETRY_TIMEOUT_NOT_RESTRICTED = 6
     RETRY_TIMEOUT_RESTRICTED = 15
+    MAX_RECONNECT_RETRY_ON_SAME_SOCKET = 1
 
     def __init__(self,
                  stackParams: dict,
@@ -1122,6 +1123,8 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
 
         KITNetworkInterface.__init__(self,
                                      registry=registry)
+
+        self._retry_connect = {}
 
     def maintainConnections(self, force=False):
         """
@@ -1163,10 +1166,16 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
         for name, remote in self.remotes.items():
             if name in exclude or remote.isConnected:
                 continue
-            if remote.socket:
-                self.sendPingPong(remote, is_ping=True)
-            else:
+
+            if not name in self._retry_connect:
+                self._retry_connect[name] = 0
+
+            if not remote.socket or self._retry_connect[name] >= KITZStack.MAX_RECONNECT_RETRY_ON_SAME_SOCKET:
+                self._retry_connect.pop(name, None)
                 self.reconnectRemote(remote)
+            else:
+                self._retry_connect[name] += 1
+                self.sendPingPong(remote, is_ping=True)
 
     def connectToMissing(self) -> set:
         """
