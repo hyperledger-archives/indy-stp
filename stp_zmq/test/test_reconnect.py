@@ -80,7 +80,7 @@ def test_reconnect_short(looper, connected_stacks, connection_timeout, disconnec
     # CONNECT
     looper.add(disconnected_motor)
     looper.run(eventually(
-        checkStacksConnected, stacks, retryWait=1, timeout=connection_timeout))
+        checkStacksConnected, stacks, retryWait=1, timeout=2 * connection_timeout))
 
 
 def test_reconnect_long(looper, connected_stacks, connection_timeout, disconnect_first_stack):
