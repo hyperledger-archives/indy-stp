@@ -1,3 +1,4 @@
+import time
 from copy import copy
 
 import pytest
@@ -6,7 +7,7 @@ from stp_core.loop.eventually import eventually
 from stp_core.network.auth_mode import AuthMode
 from stp_core.test.helper import Printer, prepStacks, \
     checkStacksConnected, checkStackDisonnected
-from stp_zmq.test.helper import genKeys
+from stp_zmq.test.helper import genKeys, patch_send_ping_counter
 from stp_zmq.zstack import KITZStack
 
 
@@ -36,6 +37,7 @@ def connected_stacks(registry, tdir, looper, connection_timeout):
 
     return stacks, motors
 
+
 @pytest.fixture()
 def disconnect_first_stack(looper, connected_stacks, connection_timeout):
     stacks, motors = connected_stacks
@@ -48,54 +50,79 @@ def disconnect_first_stack(looper, connected_stacks, connection_timeout):
 
     return disconnected_motor, other_stacks
 
-def test_reconnect_short(looper, connected_stacks, connection_timeout, disconnect_first_stack):
-    stacks, motors = connected_stacks
 
-    # DISCONNECT
-    disconnected_motor, other_stacks = disconnect_first_stack
+def disconnect(looper, disconnected_stack, connection_timeout):
+    disconnected_motor, other_stacks = disconnected_stack
     looper.run(eventually(
         checkStackDisonnected, disconnected_motor.stack, other_stacks, retryWait=1, timeout=connection_timeout))
     looper.run(eventually(
         checkStacksConnected, other_stacks, retryWait=1, timeout=connection_timeout))
 
-    looper.runFor(1)
-
-    # CONNECT
+def connect(looper, disconnected_stack):
+    disconnected_motor, _ = disconnected_stack
     looper.add(disconnected_motor)
-    looper.run(eventually(
-        checkStacksConnected, stacks, retryWait=1, timeout=connection_timeout))
 
-def test_reconnect_short(looper, connected_stacks, connection_timeout, disconnect_first_stack):
+def check_disconnected_for(disconnect_time, looper, connected_stacks, connection_timeout, disconnect_first_stack):
     stacks, motors = connected_stacks
 
     # DISCONNECT
-    disconnected_motor, other_stacks = disconnect_first_stack
-    looper.run(eventually(
-        checkStackDisonnected, disconnected_motor.stack, other_stacks, retryWait=1, timeout=connection_timeout))
-    looper.run(eventually(
-        checkStacksConnected, other_stacks, retryWait=1, timeout=connection_timeout))
+    disconnect(looper, disconnect_first_stack, connection_timeout)
 
-    looper.runFor(1)
+    looper.runFor(disconnect_time)
 
     # CONNECT
-    looper.add(disconnected_motor)
+    connect(looper, disconnect_first_stack)
     looper.run(eventually(
-        checkStacksConnected, stacks, retryWait=1, timeout=2 * connection_timeout))
+        checkStacksConnected, stacks, retryWait=1, timeout=2*connection_timeout))
+
+
+def test_reconnect_short(looper, connected_stacks, connection_timeout, disconnect_first_stack):
+    """
+    Check that if a stack is kept disconnected for a short time, it is able to reconnect
+    """
+    check_disconnected_for(1,
+                           looper, connected_stacks, connection_timeout, disconnect_first_stack)
 
 
 def test_reconnect_long(looper, connected_stacks, connection_timeout, disconnect_first_stack):
-    stacks, motors = connected_stacks
+    """
+    Check that if a stack is kept disconnected for a long time, it is able to reconnect
+    """
+    check_disconnected_for(5 * 60,
+                           looper, connected_stacks, connection_timeout, disconnect_first_stack)
 
-    # DISCONNECT
-    disconnected_motor, other_stacks = disconnect_first_stack
-    looper.run(eventually(
-        checkStackDisonnected, disconnected_motor.stack, other_stacks, retryWait=1, timeout=connection_timeout))
-    looper.run(eventually(
-        checkStacksConnected, other_stacks, retryWait=1, timeout=connection_timeout))
 
-    looper.runFor(5 * 60)
+def test_recreate_sockets_after_ping_retry(looper, connected_stacks, connection_timeout, disconnect_first_stack):
+    """
+    Check that if a stack tries to send PING on re-connect, but not more than MAX_RECONNECT_RETRY_ON_SAME_SOCKET time.
+    After this sockets must be re-created.
+    """
+    _, other_stacks = disconnect_first_stack
+    stack = other_stacks[0]
 
-    # CONNECT
-    looper.add(disconnected_motor)
-    looper.run(eventually(
-        checkStacksConnected, stacks, retryWait=1, timeout=connection_timeout))
+    disconnect(looper, disconnect_first_stack, connection_timeout)
+
+    # do not do automatic re-connect
+    for stack in other_stacks:
+        stack.nextCheck = time.perf_counter() + 10000000
+
+    patch_send_ping_counter(stack)
+
+    # check that sockets are not re-created MAX_RECONNECT_RETRY_ON_SAME_SOCKET times
+    # and PING is called
+    for i in range(KITZStack.MAX_RECONNECT_RETRY_ON_SAME_SOCKET):
+        sockets_before = [remote.socket for name, remote in stack.remotes.items()]
+        ping_before = stack.ping_count
+
+        stack.retryDisconnected()
+
+        sockets_after = [remote.socket for name, remote in stack.remotes.items()]
+        ping_after = stack.ping_count
+        assert sockets_before == sockets_after
+        assert ping_before == ping_after - 1
+
+    # check that sockets are re-created on next re-connect
+    sockets_before = [remote.socket for name, remote in stack.remotes.items()]
+    stack.retryDisconnected()
+    sockets_after = [remote.socket for name, remote in stack.remotes.items()]
+    assert sockets_before != sockets_after
