@@ -1174,7 +1174,7 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
                 self._retry_connect.pop(name, None)
                 self.reconnectRemote(remote)
             else:
-                self._retry_connect[name] =  self._retry_connect.pop(name) + 1
+                self._retry_connect[name] += 1
                 self.sendPingPong(remote, is_ping=True)
 
     def connectToMissing(self) -> set:
