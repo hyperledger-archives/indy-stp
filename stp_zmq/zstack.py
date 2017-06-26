@@ -38,11 +38,21 @@ logger = getlogger()
 
 DEFAULT_LISTENER_QUOTA = 100
 DEFAULT_REMOTE_QUOTA = 100
+KEEPALIVE_INTVL = 1     # seconds
+KEEPALIVE_IDLE = 20     # seconds
 
 # TODO: Separate directories are maintainer for public keys and verification
 # keys of remote, same direcotry can be used, infact preserve only
 # verification key and generate public key from that. Same concern regarding
 # signing and private keys
+
+
+def set_keepalive(sock):
+    # This assumes the same TCP_KEEPALIVE configuration for all sockets which
+    # is not ideal but matches what we do in code
+    sock.setsockopt(zmq.TCP_KEEPALIVE, 1)
+    sock.setsockopt(zmq.TCP_KEEPALIVE_INTVL, KEEPALIVE_INTVL*1000)
+    sock.setsockopt(zmq.TCP_KEEPALIVE_IDLE, KEEPALIVE_IDLE*1000)
 
 
 class Remote:
@@ -97,8 +107,7 @@ class Remote:
         sock.curve_serverkey = self.publicKey
         sock.identity = localPubKey
         # sock.setsockopt(test.PROBE_ROUTER, 1)
-        sock.setsockopt(zmq.TCP_KEEPALIVE, 1)
-        sock.setsockopt(zmq.TCP_KEEPALIVE_INTVL, 1000)
+        set_keepalive(sock)
         addr = 'tcp://{}:{}'.format(*self.ha)
         sock.connect(addr)
         self.socket = sock
@@ -196,7 +205,8 @@ class ZStack(NetworkInterface):
 
     def __init__(self, name, ha, basedirpath, msgHandler, restricted=True,
                  seed=None, onlyListener=False,
-                 listenerQuota=DEFAULT_LISTENER_QUOTA, remoteQuota=DEFAULT_REMOTE_QUOTA):
+                 listenerQuota=DEFAULT_LISTENER_QUOTA,
+                 remoteQuota=DEFAULT_REMOTE_QUOTA):
         self._name = name
         self.ha = ha
         self.basedirpath = basedirpath
@@ -476,8 +486,7 @@ class ZStack(NetworkInterface):
         self.listener.curve_server = True
         self.listener.identity = self.publicKey
         logger.debug('{} will bind its listener at {}'.format(self, self.ha[1]))
-        self.listener.setsockopt(zmq.TCP_KEEPALIVE, 1)
-        self.listener.setsockopt(zmq.TCP_KEEPALIVE_INTVL, 1000)
+        set_keepalive(self.listener)
         self.listener.bind(
             'tcp://*:{}'.format(self.ha[1]))
 
@@ -1172,7 +1181,8 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
             if not name in self._retry_connect:
                 self._retry_connect[name] = 0
 
-            if not remote.socket or self._retry_connect[name] >= KITZStack.MAX_RECONNECT_RETRY_ON_SAME_SOCKET:
+            if not remote.socket or self._retry_connect[name] >= \
+                    self.MAX_RECONNECT_RETRY_ON_SAME_SOCKET:
                 self._retry_connect.pop(name, None)
                 self.reconnectRemote(remote)
             else:

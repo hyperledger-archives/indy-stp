@@ -27,6 +27,9 @@ class Printer:
         print('{} printing... {}'.format(self.name, m))
         self.printeds.append(m)
 
+    def reset(self):
+        self.printeds = []
+
 
 def chkPrinted(p, m):
     assert m in [_[0] for _ in p.printeds]

@@ -54,15 +54,19 @@ def disconnect_first_stack(looper, connected_stacks, connection_timeout):
 def disconnect(looper, disconnected_stack, connection_timeout):
     disconnected_motor, other_stacks = disconnected_stack
     looper.run(eventually(
-        checkStackDisonnected, disconnected_motor.stack, other_stacks, retryWait=1, timeout=connection_timeout))
+        checkStackDisonnected, disconnected_motor.stack, other_stacks,
+        retryWait=1, timeout=connection_timeout))
     looper.run(eventually(
         checkStacksConnected, other_stacks, retryWait=1, timeout=connection_timeout))
+
 
 def connect(looper, disconnected_stack):
     disconnected_motor, _ = disconnected_stack
     looper.add(disconnected_motor)
 
-def check_disconnected_for(disconnect_time, looper, connected_stacks, connection_timeout, disconnect_first_stack):
+
+def check_disconnected_for(disconnect_time, looper, connected_stacks,
+                           connection_timeout, disconnect_first_stack):
     stacks, motors = connected_stacks
 
     # DISCONNECT
@@ -76,23 +80,28 @@ def check_disconnected_for(disconnect_time, looper, connected_stacks, connection
         checkStacksConnected, stacks, retryWait=1, timeout=2*connection_timeout))
 
 
-def test_reconnect_short(looper, connected_stacks, connection_timeout, disconnect_first_stack):
+def test_reconnect_short(looper, connected_stacks, connection_timeout,
+                         disconnect_first_stack):
     """
     Check that if a stack is kept disconnected for a short time, it is able to reconnect
     """
     check_disconnected_for(1,
-                           looper, connected_stacks, connection_timeout, disconnect_first_stack)
+                           looper, connected_stacks, connection_timeout,
+                           disconnect_first_stack)
 
 
-def test_reconnect_long(looper, connected_stacks, connection_timeout, disconnect_first_stack):
+def test_reconnect_long(looper, connected_stacks, connection_timeout,
+                        disconnect_first_stack):
     """
     Check that if a stack is kept disconnected for a long time, it is able to reconnect
     """
     check_disconnected_for(5 * 60,
-                           looper, connected_stacks, connection_timeout, disconnect_first_stack)
+                           looper, connected_stacks, connection_timeout,
+                           disconnect_first_stack)
 
 
-def test_recreate_sockets_after_ping_retry(looper, connected_stacks, connection_timeout, disconnect_first_stack):
+def test_recreate_sockets_after_ping_retry(looper, connected_stacks,
+                                           connection_timeout, disconnect_first_stack):
     """
     Check that if a stack tries to send PING on re-connect, but not more than MAX_RECONNECT_RETRY_ON_SAME_SOCKET time.
     After this sockets must be re-created.
