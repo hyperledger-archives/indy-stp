@@ -29,7 +29,6 @@ from zmq.utils.monitor import recv_monitor_message
 import zmq
 from stp_core.common.log import getlogger
 from stp_core.network.network_interface import NetworkInterface
-from stp_core.ratchet import Ratchet
 from stp_core.types import HA
 from stp_zmq.util import createEncAndSigKeys, \
     moveKeyFilesToCorrectLocations, createCertsFromKeys
@@ -40,6 +39,8 @@ DEFAULT_LISTENER_QUOTA = 100
 DEFAULT_REMOTE_QUOTA = 100
 KEEPALIVE_INTVL = 1     # seconds
 KEEPALIVE_IDLE = 20     # seconds
+KEEPALIVE_CNT = 10
+
 
 # TODO: Separate directories are maintainer for public keys and verification
 # keys of remote, same direcotry can be used, infact preserve only
@@ -51,8 +52,9 @@ def set_keepalive(sock):
     # This assumes the same TCP_KEEPALIVE configuration for all sockets which
     # is not ideal but matches what we do in code
     sock.setsockopt(zmq.TCP_KEEPALIVE, 1)
-    sock.setsockopt(zmq.TCP_KEEPALIVE_INTVL, KEEPALIVE_INTVL*1000)
-    sock.setsockopt(zmq.TCP_KEEPALIVE_IDLE, KEEPALIVE_IDLE*1000)
+    sock.setsockopt(zmq.TCP_KEEPALIVE_INTVL, KEEPALIVE_INTVL)
+    sock.setsockopt(zmq.TCP_KEEPALIVE_IDLE, KEEPALIVE_IDLE)
+    sock.setsockopt(zmq.TCP_KEEPALIVE_CNT, KEEPALIVE_CNT)
 
 
 class Remote:
@@ -106,7 +108,6 @@ class Remote:
         sock.curve_secretkey = localSecKey
         sock.curve_serverkey = self.publicKey
         sock.identity = localPubKey
-        # sock.setsockopt(test.PROBE_ROUTER, 1)
         set_keepalive(sock)
         addr = 'tcp://{}:{}'.format(*self.ha)
         sock.connect(addr)
@@ -170,10 +171,14 @@ class Remote:
         return False
 
     def _lastSocketEvents(self, nonBlock=True):
-        monitor = self.socket.get_monitor_socket()
+        return self._get_monitor_events(self.socket, nonBlock)
+
+    @staticmethod
+    def _get_monitor_events(socket, non_block=True):
+        monitor = socket.get_monitor_socket()
         events = []
         # noinspection PyUnresolvedReferences
-        flags = zmq.NOBLOCK if nonBlock else 0
+        flags = zmq.NOBLOCK if non_block else 0
         while True:
             try:
                 # noinspection PyUnresolvedReferences
@@ -182,7 +187,6 @@ class Remote:
             except zmq.Again:
                 break
         return events
-
 
 # TODO: Use Async io
 class ZStack(NetworkInterface):
