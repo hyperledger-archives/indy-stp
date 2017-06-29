@@ -8,7 +8,7 @@ from stp_zmq.test.helper import genKeys
 from stp_zmq.zstack import KITZStack
 
 
-def testKitZStacksConnected(registry, tdir, looper):
+def testKitZStacksConnected(registry, tdir, looper, tconf):
     genKeys(tdir, registry.keys())
     stacks = []
     for name, ha in registry.items():
@@ -22,6 +22,6 @@ def testKitZStacksConnected(registry, tdir, looper):
     prepStacks(looper, *stacks, connect=False, useKeys=True)
     # TODO: the connection may not be established for the first try because
     # some of the stacks may not have had a remote yet (that is they haven't had yet called connect)
-    timeout = 2*KITZStack.RETRY_TIMEOUT_RESTRICTED+1
+    timeout = 2*tconf.RETRY_TIMEOUT_RESTRICTED+1
     looper.run(eventually(
         checkStacksConnected, stacks, retryWait=1, timeout=timeout))

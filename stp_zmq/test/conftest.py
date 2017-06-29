@@ -2,6 +2,8 @@ import asyncio
 
 import pytest
 import zmq.asyncio
+
+from stp_core.common.config.util import getConfig
 from stp_core.common.temp_file_util import SafeTemporaryDirectory
 from stp_core.loop.looper import Looper
 
@@ -42,3 +44,8 @@ def tdir(tdirAndLooper):
 @pytest.fixture()
 def looper(tdirAndLooper):
     return tdirAndLooper[1]
+
+
+@pytest.fixture()
+def tconf():
+    return getConfig()

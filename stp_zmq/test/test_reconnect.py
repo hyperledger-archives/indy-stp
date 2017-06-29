@@ -7,15 +7,15 @@ from stp_core.loop.eventually import eventually
 from stp_core.network.auth_mode import AuthMode
 from stp_core.test.helper import Printer, prepStacks, \
     checkStacksConnected, checkStackDisonnected
-from stp_zmq.test.helper import genKeys, patch_send_ping_counter
+from stp_zmq.test.helper import genKeys, add_counters_to_ping_pong
 from stp_zmq.zstack import KITZStack
 
 
 @pytest.fixture()
-def connection_timeout():
+def connection_timeout(tconf):
     # TODO: the connection may not be established for the first try because
     # some of the stacks may not have had a remote yet (that is they haven't had yet called connect)
-    return 2 * KITZStack.RETRY_TIMEOUT_RESTRICTED + 1
+    return 2 * tconf.RETRY_TIMEOUT_RESTRICTED + 1
 
 
 @pytest.fixture()
@@ -100,8 +100,9 @@ def test_reconnect_long(looper, connected_stacks, connection_timeout,
                            disconnect_first_stack)
 
 
-def test_recreate_sockets_after_ping_retry(looper, connected_stacks,
-                                           connection_timeout, disconnect_first_stack):
+def test_recreate_sockets_after_ping_retry(looper, tconf, connected_stacks,
+                                           connection_timeout,
+                                           disconnect_first_stack):
     """
     Check that if a stack tries to send PING on re-connect, but not more than MAX_RECONNECT_RETRY_ON_SAME_SOCKET time.
     After this sockets must be re-created.
@@ -115,18 +116,18 @@ def test_recreate_sockets_after_ping_retry(looper, connected_stacks,
     for stack in other_stacks:
         stack.nextCheck = time.perf_counter() + 10000000
 
-    patch_send_ping_counter(stack)
+    add_counters_to_ping_pong(stack)
 
     # check that sockets are not re-created MAX_RECONNECT_RETRY_ON_SAME_SOCKET times
     # and PING is called
-    for i in range(KITZStack.MAX_RECONNECT_RETRY_ON_SAME_SOCKET):
+    for i in range(tconf.MAX_RECONNECT_RETRY_ON_SAME_SOCKET):
         sockets_before = [remote.socket for name, remote in stack.remotes.items()]
-        ping_before = stack.ping_count
+        ping_before = stack.sent_ping_count
 
         stack.retryDisconnected()
 
         sockets_after = [remote.socket for name, remote in stack.remotes.items()]
-        ping_after = stack.ping_count
+        ping_after = stack.sent_ping_count
         assert sockets_before == sockets_after
         assert ping_before == ping_after - 1
 
