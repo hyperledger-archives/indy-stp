@@ -1218,6 +1218,11 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
             except ValueError as ex:
                 logger.error('{} cannot connect to {} due to {}'
                              .format(self, name, ex))
+            except PublicKeyNotFoundOnDisk as ex:
+                logger.error('{} cannot connect to {} because there is no '
+                             'public key for it'
+                             .format(self, name, ex))
+
         return missing
 
     async def service(self, limit=None):
