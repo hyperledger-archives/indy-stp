@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from stp_core.crypto.util import randomSeed
@@ -5,7 +7,7 @@ from stp_core.loop.eventually import eventually
 from stp_core.network.port_dispenser import genHa
 from stp_core.test.helper import Printer, prepStacks, chkPrinted
 from stp_zmq.test.helper import genKeys, create_and_prep_stacks, \
-    check_stacks_communicating
+    check_stacks_communicating, get_file_permission_mask, get_zstack_key_paths
 from stp_zmq.zstack import ZStack
 
 
@@ -89,6 +91,20 @@ def test_zstack_non_utf8(tdir, looper, tconf):
     for uid in alpha.remotes:
         alpha.transmit(b'{"k3": "v3"}', uid, serialized=True)
     looper.run(eventually(chkPrinted, betaP, {"k3": "v3"}))
+
+
+def test_zstack_creates_keys_with_secure_permissions(tdir):
+    any_seed = b'0'*32
+    stack_name = 'aStack'
+    key_paths = get_zstack_key_paths(stack_name, tdir)
+
+    ZStack.initLocalKeys(stack_name, tdir, any_seed)
+
+    for file_path in key_paths['secret']:
+        assert get_file_permission_mask(file_path) == '600'
+
+    for file_path in key_paths['public']:
+        assert get_file_permission_mask(file_path) == '644'
 
 
 """

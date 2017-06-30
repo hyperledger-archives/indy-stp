@@ -1,6 +1,7 @@
 import os
 import types
 from distutils.dir_util import copy_tree
+from stat import ST_MODE
 
 from copy import deepcopy
 
@@ -20,6 +21,11 @@ def genKeys(baseDir, names):
         os.makedirs(d, exist_ok=True)
         for kd in ZStack.keyDirNames():
             copy_tree(os.path.join(baseDir, kd), os.path.join(d, kd))
+
+
+def patch_send_ping_counter(stack):
+    stack.ping_count = 0
+    origMethod = stack.sendPingPong
 
 
 def add_counters_to_ping_pong(stack):
@@ -84,3 +90,27 @@ def check_stacks_communicating(looper, stacks, printers):
             if idx != j:
                 looper.run(eventually(chkPrinted, printer,
                                       {'greetings': '{} here'.format(stack.name)}))
+
+
+def get_file_permission_mask(file_path):
+    return oct(os.stat(file_path)[ST_MODE] & 0o777)[-3:]
+
+
+def get_zstack_key_paths(stack_name, common_path):
+    home_dir = ZStack.homeDirPath(common_path, stack_name)
+    # secrets
+    sigDirPath = ZStack.sigDirPath(home_dir)
+    secretDirPath = ZStack.secretDirPath(home_dir)
+    # public
+    verifDirPath = ZStack.verifDirPath(home_dir)
+    pubDirPath = ZStack.publicDirPath(home_dir)
+    return dict(
+        secret=(
+            os.path.join(sigDirPath, stack_name) + '.key_secret',
+            os.path.join(secretDirPath, stack_name) + '.key_secret'
+        ),
+        public=(
+            os.path.join(verifDirPath, stack_name) + '.key',
+            os.path.join(pubDirPath, stack_name) + '.key'
+        ),
+    )
