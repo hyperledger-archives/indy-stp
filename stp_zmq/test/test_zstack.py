@@ -1,38 +1,29 @@
+import os
+
 import pytest
 
 from stp_core.crypto.util import randomSeed
 from stp_core.loop.eventually import eventually
 from stp_core.network.port_dispenser import genHa
 from stp_core.test.helper import Printer, prepStacks, chkPrinted
-from stp_zmq.test.helper import genKeys
+from stp_zmq.test.helper import genKeys, create_and_prep_stacks, \
+    check_stacks_communicating, get_file_permission_mask, get_zstack_key_paths
 from stp_zmq.zstack import ZStack
 
 
-def create_and_prep_stacks(names, tdir, looper):
-    genKeys(tdir, names)
-    printers = [Printer(n) for n in names]
-    stacks = [ZStack(n, ha=genHa(), basedirpath=tdir, msgHandler=printers[i].print,
-                     restricted=True) for i, n in enumerate(names)]
-    prepStacks(looper, *stacks, connect=True, useKeys=True)
-    return stacks, printers
-
-
-def testRestricted2ZStackCommunication(tdir, looper):
+def testRestricted2ZStackCommunication(tdir, looper, tconf):
     """
     Create 2 ZStack and make them send and receive messages.
     Both stacks allow communication only when keys are shared
     :return:
     """
     names = ['Alpha', 'Beta']
-    (alpha, beta), (alphaP, betaP) = create_and_prep_stacks(names, tdir, looper)
-    alpha.send({'greetings': 'hi'}, beta.name)
-    beta.send({'greetings': 'hello'}, alpha.name)
-
-    looper.run(eventually(chkPrinted, alphaP, {'greetings': 'hello'}))
-    looper.run(eventually(chkPrinted, betaP, {'greetings': 'hi'}))
+    (alpha, beta), (alphaP, betaP) = create_and_prep_stacks(names, tdir,
+                                                            looper, tconf)
+    check_stacks_communicating(looper, (alpha, beta), (alphaP, betaP))
 
 
-def testUnrestricted2ZStackCommunication(tdir, looper):
+def testUnrestricted2ZStackCommunication(tdir, looper, tconf):
     """
     Create 2 ZStack and make them send and receive messages.
     Both stacks allow communication even when keys are not shared
@@ -42,9 +33,9 @@ def testUnrestricted2ZStackCommunication(tdir, looper):
     alphaP = Printer(names[0])
     betaP = Printer(names[1])
     alpha = ZStack(names[0], ha=genHa(), basedirpath=tdir, msgHandler=alphaP.print,
-                   restricted=False, seed=randomSeed())
+                   restricted=False, seed=randomSeed(), config=tconf)
     beta = ZStack(names[1], ha=genHa(), basedirpath=tdir, msgHandler=betaP.print,
-                  restricted=False, seed=randomSeed())
+                  restricted=False, seed=randomSeed(), config=tconf)
 
     prepStacks(looper, alpha, beta, connect=True, useKeys=True)
     alpha.send({'greetings': 'hi'}, beta.name)
@@ -54,7 +45,7 @@ def testUnrestricted2ZStackCommunication(tdir, looper):
     looper.run(eventually(chkPrinted, betaP, {'greetings': 'hi'}))
 
 
-def testZStackSendMethodReturnsFalseIfDestinationIsUnknown(tdir, looper):
+def testZStackSendMethodReturnsFalseIfDestinationIsUnknown(tdir, looper, tconf):
     """
     Checks: https://evernym.atlassian.net/browse/SOV-971
     1. Connect two stacks 
@@ -64,14 +55,14 @@ def testZStackSendMethodReturnsFalseIfDestinationIsUnknown(tdir, looper):
         fail just return False
     """
     names = ['Alpha', 'Beta']
-    (alpha, beta), _ = create_and_prep_stacks(names, tdir, looper)
+    (alpha, beta), _ = create_and_prep_stacks(names, tdir, looper, tconf)
     # disconnect remote
     alpha.getRemote(beta.name).disconnect()
     # check send message returns False
     assert alpha.send({'greetings': 'hello'}, beta.name) is False
 
 
-def test_zstack_non_utf8(tdir, looper):
+def test_zstack_non_utf8(tdir, looper, tconf):
     """
     ZStack gets a non utf-8 message and does not hand it over to the
     processing method
@@ -79,7 +70,8 @@ def test_zstack_non_utf8(tdir, looper):
     """
     names = ['Alpha', 'Beta']
     genKeys(tdir, names)
-    (alpha, beta), (alphaP, betaP) = create_and_prep_stacks(names, tdir, looper)
+    (alpha, beta), (alphaP, betaP) = create_and_prep_stacks(names, tdir,
+                                                            looper, tconf)
 
     # Send a utf-8 message and see its received
     for uid in alpha.remotes:
@@ -99,6 +91,20 @@ def test_zstack_non_utf8(tdir, looper):
     for uid in alpha.remotes:
         alpha.transmit(b'{"k3": "v3"}', uid, serialized=True)
     looper.run(eventually(chkPrinted, betaP, {"k3": "v3"}))
+
+
+def test_zstack_creates_keys_with_secure_permissions(tdir):
+    any_seed = b'0'*32
+    stack_name = 'aStack'
+    key_paths = get_zstack_key_paths(stack_name, tdir)
+
+    ZStack.initLocalKeys(stack_name, tdir, any_seed)
+
+    for file_path in key_paths['secret']:
+        assert get_file_permission_mask(file_path) == '600'
+
+    for file_path in key_paths['public']:
+        assert get_file_permission_mask(file_path) == '644'
 
 
 """

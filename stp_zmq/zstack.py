@@ -1,5 +1,7 @@
 import inspect
 
+from stp_core.common.config.util import getConfig
+
 try:
     import ujson as json
 except ImportError:
@@ -29,15 +31,12 @@ from zmq.utils.monitor import recv_monitor_message
 import zmq
 from stp_core.common.log import getlogger
 from stp_core.network.network_interface import NetworkInterface
-from stp_core.ratchet import Ratchet
 from stp_core.types import HA
 from stp_zmq.util import createEncAndSigKeys, \
     moveKeyFilesToCorrectLocations, createCertsFromKeys
 
 logger = getlogger()
 
-DEFAULT_LISTENER_QUOTA = 100
-DEFAULT_REMOTE_QUOTA = 100
 
 # TODO: Separate directories are maintainer for public keys and verification
 # keys of remote, same direcotry can be used, infact preserve only
@@ -45,8 +44,17 @@ DEFAULT_REMOTE_QUOTA = 100
 # signing and private keys
 
 
+def set_keepalive(sock, config):
+    # This assumes the same TCP_KEEPALIVE configuration for all sockets which
+    # is not ideal but matches what we do in code
+    sock.setsockopt(zmq.TCP_KEEPALIVE, 1)
+    sock.setsockopt(zmq.TCP_KEEPALIVE_INTVL, config.KEEPALIVE_INTVL)
+    sock.setsockopt(zmq.TCP_KEEPALIVE_IDLE, config.KEEPALIVE_IDLE)
+    sock.setsockopt(zmq.TCP_KEEPALIVE_CNT, config.KEEPALIVE_CNT)
+
+
 class Remote:
-    def __init__(self, name, ha, verKey, publicKey):
+    def __init__(self, name, ha, verKey, publicKey, config=None):
         # TODO, remove *args, **kwargs after removing test
 
         # Every remote has a unique name per stack, the name can be the
@@ -64,6 +72,7 @@ class Remote:
         self._numOfReconnects = 0
         self._isConnected = False
         self._lastConnectedAt = None
+        self.config = config or getConfig()
 
         # Currently keeping uid field to resemble RAET RemoteEstate
         self.uid = name
@@ -96,9 +105,7 @@ class Remote:
         sock.curve_secretkey = localSecKey
         sock.curve_serverkey = self.publicKey
         sock.identity = localPubKey
-        # sock.setsockopt(test.PROBE_ROUTER, 1)
-        sock.setsockopt(zmq.TCP_KEEPALIVE, 1)
-        sock.setsockopt(zmq.TCP_KEEPALIVE_INTVL, 1000)
+        set_keepalive(sock, self.config)
         addr = 'tcp://{}:{}'.format(*self.ha)
         sock.connect(addr)
         self.socket = sock
@@ -161,10 +168,14 @@ class Remote:
         return False
 
     def _lastSocketEvents(self, nonBlock=True):
-        monitor = self.socket.get_monitor_socket()
+        return self._get_monitor_events(self.socket, nonBlock)
+
+    @staticmethod
+    def _get_monitor_events(socket, non_block=True):
+        monitor = socket.get_monitor_socket()
         events = []
         # noinspection PyUnresolvedReferences
-        flags = zmq.NOBLOCK if nonBlock else 0
+        flags = zmq.NOBLOCK if non_block else 0
         while True:
             try:
                 # noinspection PyUnresolvedReferences
@@ -178,8 +189,6 @@ class Remote:
 # TODO: Use Async io
 class ZStack(NetworkInterface):
     # Assuming only one listener per stack for now.
-
-    MAX_SOCKETS = 16384 if sys.platform != 'win32' else None
 
     PublicKeyDirName = 'public_keys'
     PrivateKeyDirName = 'private_keys'
@@ -195,15 +204,16 @@ class ZStack(NetworkInterface):
     messageTimeout = 3
 
     def __init__(self, name, ha, basedirpath, msgHandler, restricted=True,
-                 seed=None, onlyListener=False,
-                 listenerQuota=DEFAULT_LISTENER_QUOTA, remoteQuota=DEFAULT_REMOTE_QUOTA):
+                 seed=None, onlyListener=False, config=None):
         self._name = name
         self.ha = ha
         self.basedirpath = basedirpath
         self.msgHandler = msgHandler
         self.seed = seed
-        self.listenerQuota = listenerQuota
-        self.remoteQuota = remoteQuota
+        self.config = config or getConfig()
+
+        self.listenerQuota = self.config.DEFAULT_LISTENER_QUOTA
+        self.senderQuota = self.config.DEFAULT_SENDER_QUOTA
 
         self.homeDir = None
         # As of now there would be only one file in secretKeysDir and sigKeyDir
@@ -241,6 +251,8 @@ class ZStack(NetworkInterface):
 
         self.rxMsgs = deque()
         self._created = time.perf_counter()
+
+        self.last_heartbeat_at = None
 
     @property
     def remotes(self):
@@ -315,7 +327,8 @@ class ZStack(NetworkInterface):
         createCertsFromKeys(pubDirPath, remoteName, z85.encode(public_key))
 
     def onHostAddressChanged(self):
-        # we don't store remote data like ip, port, domain name, etc, so nothing to do here
+        # we don't store remote data like ip, port, domain name, etc, so
+        # nothing to do here
         pass
 
     @staticmethod
@@ -443,8 +456,8 @@ class ZStack(NetworkInterface):
     def start(self, restricted=None, reSetupAuth=True):
         # self.ctx = test.asyncio.Context.instance()
         self.ctx = zmq.Context.instance()
-        if self.MAX_SOCKETS:
-            self.ctx.MAX_SOCKETS = self.MAX_SOCKETS
+        if self.config.MAX_SOCKETS:
+            self.ctx.MAX_SOCKETS = self.config.MAX_SOCKETS
         restricted = self.restricted if restricted is None else restricted
         logger.info('{} starting with restricted as {} and reSetupAuth '
                     'as {}'.format(self, restricted, reSetupAuth),
@@ -476,8 +489,7 @@ class ZStack(NetworkInterface):
         self.listener.curve_server = True
         self.listener.identity = self.publicKey
         logger.debug('{} will bind its listener at {}'.format(self, self.ha[1]))
-        self.listener.setsockopt(zmq.TCP_KEEPALIVE, 1)
-        self.listener.setsockopt(zmq.TCP_KEEPALIVE_INTVL, 1000)
+        set_keepalive(self.listener, self.config)
         self.listener.bind(
             'tcp://*:{}'.format(self.ha[1]))
 
@@ -643,12 +655,20 @@ class ZStack(NetworkInterface):
 
     async def _serviceStack(self, age):
         # TODO: age is unused
+
+        # These checks are kept here and not moved to a function since
+        # `_serviceStack` is called very often and function call is an overhead
+        if self.config.ENABLE_HEARTBEATS and (
+                        self.last_heartbeat_at is None or
+                        (time.perf_counter() - self.last_heartbeat_at) >=
+                        self.config.HEARTBEAT_FREQ):
+            self.send_heartbeats()
+
         self._receiveFromListener(quota=self.listenerQuota)
-        self._receiveFromRemotes(quotaPerRemote=self.remoteQuota)
+        self._receiveFromRemotes(quotaPerRemote=self.senderQuota)
         return len(self.rxMsgs)
 
     def processReceived(self, limit):
-
         if limit <= 0:
             return 0
 
@@ -676,19 +696,6 @@ class ZStack(NetworkInterface):
             except IndexError:
                 break
         return x + 1
-
-    def handlePingPong(self, msg, frm, ident):
-        if msg in (self.pingMessage, self.pongMessage):
-            if msg == self.pingMessage:
-                logger.debug('{} got ping from {}'.format(self, frm))
-                self.sendPingPong(frm, is_ping=False)
-
-            if msg == self.pongMessage:
-                if ident in self.remotesByKeys:
-                    self.remotesByKeys[ident].setConnected()
-                logger.debug('{} got pong from {}'.format(self, frm))
-            return True
-        return False
 
     @abstractmethod
     def doProcessReceived(self, msg, frm, ident):
@@ -787,9 +794,29 @@ class ZStack(NetworkInterface):
         elif r is None:
             logger.debug('{} will be sending in batch'.format(self))
         else:
-            logger.warn('{} got an unexpected return value {} while sending'.
+            logger.warning('{} got an unexpected return value {} while sending'.
                         format(self, r))
         return r
+
+    def handlePingPong(self, msg, frm, ident):
+        if msg in (self.pingMessage, self.pongMessage):
+            if msg == self.pingMessage:
+                logger.debug('{} got ping from {}'.format(self, frm))
+                self.sendPingPong(frm, is_ping=False)
+
+            if msg == self.pongMessage:
+                if ident in self.remotesByKeys:
+                    self.remotesByKeys[ident].setConnected()
+                logger.debug('{} got pong from {}'.format(self, frm))
+            return True
+        return False
+
+    def send_heartbeats(self):
+        # Sends heartbeat (ping) to all
+        logger.info('{} sending heartbeat to all remotes'.format(self))
+        for remote in self.remotes:
+            self.sendPingPong(remote)
+        self.last_heartbeat_at = time.perf_counter()
 
     def send(self, msg: Any, remoteName: str = None, ha=None):
         if self.onlyListener:
@@ -847,6 +874,8 @@ class ZStack(NetworkInterface):
             # noinspection PyUnresolvedReferences
             # self.listener.send_multipart([ident, self.signedMsg(msg)],
             #                              flags=zmq.NOBLOCK)
+            logger.trace('{} transmitting {} to {} through listener socket'.
+                         format(self, msg, ident))
             self.listener.send_multipart([ident, msg], flags=zmq.NOBLOCK)
             return True
         except zmq.Again:
@@ -1069,8 +1098,7 @@ class SimpleZStack(ZStack):
                  seed=None,
                  onlyListener=False,
                  sighex: str=None,
-                 listenerQuota=DEFAULT_LISTENER_QUOTA,
-                 remoteQuota=DEFAULT_REMOTE_QUOTA):
+                 config=None):
 
         # TODO: sighex is unused as of now, remove once test is removed or
         # maybe use sighex to generate all keys, DECISION DEFERRED
@@ -1093,16 +1121,11 @@ class SimpleZStack(ZStack):
                          restricted=restricted,
                          seed=seed,
                          onlyListener=onlyListener,
-                         listenerQuota=listenerQuota,
-                         remoteQuota=remoteQuota)
+                         config=config)
 
 
 class KITZStack(SimpleZStack, KITNetworkInterface):
     # ZStack which maintains connections mentioned in its registry
-
-    RETRY_TIMEOUT_NOT_RESTRICTED = 6
-    RETRY_TIMEOUT_RESTRICTED = 15
-    MAX_RECONNECT_RETRY_ON_SAME_SOCKET = 1
 
     def __init__(self,
                  stackParams: dict,
@@ -1110,16 +1133,14 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
                  registry: Dict[str, HA],
                  seed=None,
                  sighex: str = None,
-                 listenerQuota=DEFAULT_LISTENER_QUOTA,
-                 remoteQuota=DEFAULT_REMOTE_QUOTA):
+                 config=None):
 
         SimpleZStack.__init__(self,
                               stackParams,
                               msgHandler,
                               seed=seed,
                               sighex=sighex,
-                              listenerQuota=listenerQuota,
-                              remoteQuota=remoteQuota)
+                              config=config)
 
         KITNetworkInterface.__init__(self,
                                      registry=registry)
@@ -1134,9 +1155,9 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
         now = time.perf_counter()
         if now < self.nextCheck and not force:
             return False
-        self.nextCheck = now + (self.RETRY_TIMEOUT_NOT_RESTRICTED
+        self.nextCheck = now + (self.config.RETRY_TIMEOUT_NOT_RESTRICTED
                                 if self.isKeySharing
-                                else self.RETRY_TIMEOUT_RESTRICTED)
+                                else self.config.RETRY_TIMEOUT_RESTRICTED)
         missing = self.connectToMissing()
         self.retryDisconnected(exclude=missing)
         logger.debug("{} next check for retries in {:.2f} seconds"
@@ -1170,7 +1191,8 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
             if not name in self._retry_connect:
                 self._retry_connect[name] = 0
 
-            if not remote.socket or self._retry_connect[name] >= KITZStack.MAX_RECONNECT_RETRY_ON_SAME_SOCKET:
+            if not remote.socket or self._retry_connect[name] >= \
+                    self.config.MAX_RECONNECT_RETRY_ON_SAME_SOCKET:
                 self._retry_connect.pop(name, None)
                 self.reconnectRemote(remote)
             else:
@@ -1201,4 +1223,3 @@ class KITZStack(SimpleZStack, KITNetworkInterface):
     async def service(self, limit=None):
         c = await super().service(limit)
         return c
-

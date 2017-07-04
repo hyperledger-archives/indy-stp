@@ -17,22 +17,57 @@ from stp_core.crypto.util import ed25519PkToCurve25519 as ep2c, \
 
 def createCertsFromKeys(key_dir, name, public_key, secret_key=None,
                         metadata=None, pSuffix='key', sSuffix='key_secret'):
+    public_key_file, secret_key_file = _get_key_files_paths(key_dir, name,
+                                                            pSuffix, sSuffix)
+
+    _write_secret_public_keys(public_key_file, secret_key_file,
+                              public_key, secret_key,
+                              metadata
+                              )
+    return public_key_file, secret_key_file
+
+
+def _get_key_files_paths(key_dir, name, pSuffix, sSuffix):
     base_filename = os.path.join(key_dir, name)
     secret_key_file = "{}.{}".format(base_filename, sSuffix)
     public_key_file = "{}.{}".format(base_filename, pSuffix)
-    now = datetime.datetime.now()
-    # print('{} writing {} {} in {}'.format(name, public_key, secret_key, key_dir))
-    _write_key_file(public_key_file,
-                    _cert_public_banner.format(now),
-                    public_key)
+    return public_key_file, secret_key_file
 
-    _write_key_file(secret_key_file,
-                    _cert_secret_banner.format(now),
+
+def _write_secret_public_keys(public_key_file_path, secret_key_file_path, public_key,
+                              secret_key, metadata):
+    current_time = datetime.datetime.now()
+    _write_public_key_file(public_key_file_path, current_time, public_key)
+    _write_secret_key_file(secret_key_file_path, current_time, public_key,
+                           secret_key, metadata)
+
+
+def _write_public_key_file(key_filename, current_time, public_key):
+    banner = _cert_public_banner.format(current_time)
+    _create_file_with_mode(key_filename, 0o644)
+    _write_key_file(key_filename,
+                    banner,
+                    public_key,
+                    secret_key=None,
+                    metadata=None,
+                    encoding='utf-8')
+
+
+def _write_secret_key_file(key_filename, current_time,
+                           public_key, secret_key, metadata):
+    banner = _cert_secret_banner.format(current_time)
+    _create_file_with_mode(key_filename, 0o600)
+    _write_key_file(key_filename,
+                    banner,
                     public_key,
                     secret_key=secret_key,
-                    metadata=metadata)
+                    metadata=metadata,
+                    encoding='utf-8')
 
-    return public_key_file, secret_key_file
+
+def _create_file_with_mode(path, mode):
+    open(path, 'a').close()
+    os.chmod(path, mode)
 
 
 def createEncAndSigKeys(enc_key_dir, sig_key_dir, name, seed=None):
