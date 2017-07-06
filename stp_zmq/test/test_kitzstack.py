@@ -5,7 +5,7 @@ from stp_core.network.auth_mode import AuthMode
 from stp_core.test.helper import Printer, prepStacks, \
     checkStacksConnected
 from stp_zmq.test.helper import genKeys
-from stp_zmq.zstack import KITZStack
+from stp_zmq.kit_zstack import KITZStack
 
 
 def testKitZStacksConnected(registry, tdir, looper, tconf):
