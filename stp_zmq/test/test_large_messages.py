@@ -5,7 +5,7 @@ from stp_core.crypto.util import randomSeed
 from stp_core.network.port_dispenser import genHa
 from stp_core.test.helper import SMotor
 from stp_zmq.test.helper import genKeys
-from stp_zmq.zstack import SimpleZStack
+from stp_zmq.simple_zstack import SimpleZStack
 
 
 def testSimpleZStacksMsgs(tdir, looper):

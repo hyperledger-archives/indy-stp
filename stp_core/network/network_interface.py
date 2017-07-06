@@ -1,5 +1,5 @@
 import time
-from abc import abstractmethod
+from abc import abstractmethod, ABCMeta
 from typing import Set
 
 from stp_core.common.log import getlogger
@@ -9,7 +9,8 @@ from stp_core.types import HA
 logger = getlogger()
 
 
-class NetworkInterface:
+# TODO: There a number of methods related to keys management, they can be moved to some class like KeysManager
+class NetworkInterface(metaclass=ABCMeta):
     localips = ['127.0.0.1', '0.0.0.0']
 
     @property
@@ -34,69 +35,69 @@ class NetworkInterface:
     @abstractmethod
     def isRemoteConnected(r) -> bool:
         """
-        A node is considered to be connected if it is joined, allowed and alived.
+        A node is considered to be connected if it is joined, allowed and alive
 
         :param r: the remote to check
         """
-        raise NotImplementedError
+        pass
 
     @staticmethod
     @abstractmethod
     def initLocalKeys(name, baseDir, sigseed, override=False):
-        raise NotImplementedError
+        pass
 
     @staticmethod
     @abstractmethod
     def initRemoteKeys(name, remoteName, baseDir, verkey, override=False):
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     def onHostAddressChanged(self):
-        raise NotImplementedError
+        pass
 
     @staticmethod
     @abstractmethod
     def areKeysSetup(name, baseDir):
-        raise NotImplementedError
+        pass
 
     @staticmethod
     @abstractmethod
     def learnKeysFromOthers(baseDir, name, others):
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     def tellKeysToOthers(self, others):
-        raise NotImplementedError
+        pass
 
     @staticmethod
     @abstractmethod
     def getHaFromLocal(name, basedirpath):
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     def removeRemote(self, r):
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     def transmit(self, msg, uid, timeout=None):
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     def start(self):
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     def stop(self):
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     def connect(self, name=None, remoteId=None, ha=None, verKeyRaw=None,
                 publicKeyRaw=None):
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     def send(self, msg, remote: str = None, ha=None):
-        raise NotImplementedError
+        pass
 
     def connectIfNotConnected(self, name=None, remoteId=None, ha=None,
                               verKeyRaw=None, publicKeyRaw=None):
@@ -198,10 +199,9 @@ class NetworkInterface:
         """
         if ha == ha2:
             return True
-        elif ha[1] != ha2[1]:
+        if ha[1] != ha2[1]:
             return False
-        else:
-            return ha[0] in self.localips and ha2[0] in self.localips
+        return ha[0] in self.localips and ha2[0] in self.localips
 
     def remotesByConnected(self):
         """
@@ -214,4 +214,3 @@ class NetworkInterface:
             array = conns if self.isRemoteConnected(r) else disconns
             array.append(r)
         return conns, disconns
-

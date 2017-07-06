@@ -8,7 +8,7 @@ from stp_core.network.auth_mode import AuthMode
 from stp_core.test.helper import Printer, prepStacks, \
     checkStacksConnected, checkStackDisonnected
 from stp_zmq.test.helper import genKeys, add_counters_to_ping_pong
-from stp_zmq.zstack import KITZStack
+from stp_zmq.kit_zstack import KITZStack
 
 
 @pytest.fixture()

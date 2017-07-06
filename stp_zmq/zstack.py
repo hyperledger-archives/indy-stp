@@ -11,182 +11,31 @@ import os
 import shutil
 import sys
 import time
-from abc import abstractmethod
 from binascii import hexlify, unhexlify
 from collections import deque
-from typing import Dict, Mapping, Callable, Tuple, Any, Union
+from typing import Dict, Mapping, Tuple, Any, Union
 from typing import Set
 
 # import stp_zmq.asyncio
 import zmq.auth
 from stp_core.crypto.nacl_wrappers import Signer, Verifier
 from stp_core.crypto.util import isHex, ed25519PkToCurve25519
-from stp_core.network.auth_mode import AuthMode
 from stp_core.network.exceptions import PublicKeyNotFoundOnDisk, VerKeyNotFoundOnDisk
-from stp_core.network.keep_in_touch import KITNetworkInterface
 from stp_zmq.authenticator import MultiZapAuthenticator
 from zmq.utils import z85
-from zmq.utils.monitor import recv_monitor_message
 
 import zmq
 from stp_core.common.log import getlogger
 from stp_core.network.network_interface import NetworkInterface
-from stp_core.types import HA
 from stp_zmq.util import createEncAndSigKeys, \
     moveKeyFilesToCorrectLocations, createCertsFromKeys
+from stp_zmq.remote import Remote, set_keepalive, set_zmq_internal_queue_length
 
 logger = getlogger()
 
 
-# TODO: Separate directories are maintainer for public keys and verification
-# keys of remote, same direcotry can be used, infact preserve only
-# verification key and generate public key from that. Same concern regarding
-# signing and private keys
-
-
-def set_keepalive(sock, config):
-    # This assumes the same TCP_KEEPALIVE configuration for all sockets which
-    # is not ideal but matches what we do in code
-    sock.setsockopt(zmq.TCP_KEEPALIVE, 1)
-    sock.setsockopt(zmq.TCP_KEEPALIVE_INTVL, config.KEEPALIVE_INTVL)
-    sock.setsockopt(zmq.TCP_KEEPALIVE_IDLE, config.KEEPALIVE_IDLE)
-    sock.setsockopt(zmq.TCP_KEEPALIVE_CNT, config.KEEPALIVE_CNT)
-
-
-class Remote:
-    def __init__(self, name, ha, verKey, publicKey, config=None):
-        # TODO, remove *args, **kwargs after removing test
-
-        # Every remote has a unique name per stack, the name can be the
-        # public key of the other end
-        self.name = name
-        self.ha = ha
-        # self.publicKey is the public key of the other end of the remote
-        self.publicKey = publicKey
-        # self.verKey is the verification key of the other end of the remote
-        self.verKey = verKey
-        self.socket = None
-        # TODO: A stack should have a monitor and it should identify remote
-        # by endpoint
-
-        self._numOfReconnects = 0
-        self._isConnected = False
-        self._lastConnectedAt = None
-        self.config = config or getConfig()
-
-        # Currently keeping uid field to resemble RAET RemoteEstate
-        self.uid = name
-
-    def __repr__(self):
-        return '{}:{}'.format(self.name, self.ha)
-
-    @property
-    def isConnected(self):
-        if not self._isConnected:
-            return False
-        lost = self.hasLostConnection
-        if lost:
-            self._isConnected = False
-            return False
-        return True
-
-    def setConnected(self):
-        self._numOfReconnects += 1
-        self._isConnected = True
-        self._lastConnectedAt = time.perf_counter()
-
-    def firstConnect(self):
-        return self._numOfReconnects == 0
-
-    def connect(self, context, localPubKey, localSecKey, typ=None):
-        typ = typ or zmq.DEALER
-        sock = context.socket(typ)
-        sock.curve_publickey = localPubKey
-        sock.curve_secretkey = localSecKey
-        sock.curve_serverkey = self.publicKey
-        sock.identity = localPubKey
-        set_keepalive(sock, self.config)
-        addr = 'tcp://{}:{}'.format(*self.ha)
-        sock.connect(addr)
-        self.socket = sock
-        logger.trace('connecting socket {} {} to remote {}'.
-                     format(self.socket.FD, self.socket.underlying, self))
-
-    def disconnect(self):
-        logger.debug('disconnecting remote {}'.format(self))
-        if self.socket:
-            logger.trace('disconnecting socket {} {}'.
-                         format(self.socket.FD, self.socket.underlying))
-
-            if self.socket._monitor_socket:
-                logger.trace('{} closing monitor socket'.format(self))
-                self.socket._monitor_socket.linger = 0
-                self.socket.monitor(None, 0)
-                self.socket._monitor_socket = None
-                # self.socket.disable_monitor()
-            self.socket.close(linger=0)
-            self.socket = None
-        else:
-            logger.debug('{} close was called on a null socket, maybe close is '
-                         'being called twice.'.format(self))
-
-        self._isConnected = False
-
-    @property
-    def hasLostConnection(self):
-
-        if self.socket is None:
-            logger.warning('Remote {} already disconnected'.format(self))
-            return False
-
-        events = self._lastSocketEvents()
-
-        if events:
-            logger.trace('Remote {} has monitor events: {}'.
-                         format(self, events))
-
-        # noinspection PyUnresolvedReferences
-        if zmq.EVENT_DISCONNECTED in events or zmq.EVENT_CLOSED in events:
-            logger.debug('{} found disconnected event on monitor'.format(self))
-
-            # Reverse events list since list has no builtin to get last index
-            events.reverse()
-
-            def eventIndex(eventName):
-                try:
-                    return events.index(eventName)
-                except ValueError:
-                    return sys.maxsize
-
-            connected = eventIndex(zmq.EVENT_CONNECTED)
-            delayed = eventIndex(zmq.EVENT_CONNECT_DELAYED)
-            disconnected = min(eventIndex(zmq.EVENT_DISCONNECTED),
-                               eventIndex(zmq.EVENT_CLOSED))
-            if disconnected < connected and disconnected < delayed:
-                return True
-
-        return False
-
-    def _lastSocketEvents(self, nonBlock=True):
-        return self._get_monitor_events(self.socket, nonBlock)
-
-    @staticmethod
-    def _get_monitor_events(socket, non_block=True):
-        monitor = socket.get_monitor_socket()
-        events = []
-        # noinspection PyUnresolvedReferences
-        flags = zmq.NOBLOCK if non_block else 0
-        while True:
-            try:
-                # noinspection PyUnresolvedReferences
-                message = recv_monitor_message(monitor, flags)
-                events.append(message['event'])
-            except zmq.Again:
-                break
-        return events
-
-
 # TODO: Use Async io
+# TODO: There a number of methods related to keys management, they can be moved to some class like KeysManager
 class ZStack(NetworkInterface):
     # Assuming only one listener per stack for now.
 
@@ -263,7 +112,6 @@ class ZStack(NetworkInterface):
         return self._created
 
     @property
-    @abstractmethod
     def name(self):
         return self._name
 
@@ -490,6 +338,7 @@ class ZStack(NetworkInterface):
         self.listener.identity = self.publicKey
         logger.debug('{} will bind its listener at {}'.format(self, self.ha[1]))
         set_keepalive(self.listener, self.config)
+        set_zmq_internal_queue_length(self.listener, self.config)
         self.listener.bind(
             'tcp://*:{}'.format(self.ha[1]))
 
@@ -697,7 +546,6 @@ class ZStack(NetworkInterface):
                 break
         return x + 1
 
-    @abstractmethod
     def doProcessReceived(self, msg, frm, ident):
         return msg
 
@@ -1088,138 +936,3 @@ class DummyKeep:
                 self.stack.setRestricted(False)
             if mode == 0:
                 self.stack.setRestricted(True)
-
-
-class SimpleZStack(ZStack):
-
-    def __init__(self,
-                 stackParams: Dict,
-                 msgHandler: Callable,
-                 seed=None,
-                 onlyListener=False,
-                 sighex: str=None,
-                 config=None):
-
-        # TODO: sighex is unused as of now, remove once test is removed or
-        # maybe use sighex to generate all keys, DECISION DEFERRED
-
-        self.stackParams = stackParams
-        self.msgHandler = msgHandler
-
-        # TODO: Ignoring `main` param as of now which determines
-        # if the stack will have a listener socket or not.
-        name = stackParams['name']
-        ha = stackParams['ha']
-        basedirpath = stackParams['basedirpath']
-
-        auto = stackParams.pop('auth_mode', None)
-        restricted = auto != AuthMode.ALLOW_ANY.value
-        super().__init__(name,
-                         ha,
-                         basedirpath,
-                         msgHandler=self.msgHandler,
-                         restricted=restricted,
-                         seed=seed,
-                         onlyListener=onlyListener,
-                         config=config)
-
-
-class KITZStack(SimpleZStack, KITNetworkInterface):
-    # ZStack which maintains connections mentioned in its registry
-
-    def __init__(self,
-                 stackParams: dict,
-                 msgHandler: Callable,
-                 registry: Dict[str, HA],
-                 seed=None,
-                 sighex: str = None,
-                 config=None):
-
-        SimpleZStack.__init__(self,
-                              stackParams,
-                              msgHandler,
-                              seed=seed,
-                              sighex=sighex,
-                              config=config)
-
-        KITNetworkInterface.__init__(self,
-                                     registry=registry)
-
-        self._retry_connect = {}
-
-    def maintainConnections(self, force=False):
-        """
-        Ensure appropriate connections.
-
-        """
-        now = time.perf_counter()
-        if now < self.nextCheck and not force:
-            return False
-        self.nextCheck = now + (self.config.RETRY_TIMEOUT_NOT_RESTRICTED
-                                if self.isKeySharing
-                                else self.config.RETRY_TIMEOUT_RESTRICTED)
-        missing = self.connectToMissing()
-        self.retryDisconnected(exclude=missing)
-        logger.debug("{} next check for retries in {:.2f} seconds"
-                     .format(self, self.nextCheck - now))
-        return True
-
-    def reconcileNodeReg(self) -> set:
-        """
-        Check whether registry contains some addresses 
-        that were never connected to
-        
-        :return: 
-        """
-
-        matches = set()
-        for name, remote in self.remotes.items():
-            if name not in self.registry:
-                continue
-            if self.sameAddr(remote.ha, self.registry[name]):
-                matches.add(name)
-                logger.debug("{} matched remote {} {}".
-                             format(self, remote.uid, remote.ha))
-        return self.registry.keys() - matches - {self.name}
-
-    def retryDisconnected(self, exclude=None):
-        exclude = exclude or {}
-        for name, remote in self.remotes.items():
-            if name in exclude or remote.isConnected:
-                continue
-
-            if not name in self._retry_connect:
-                self._retry_connect[name] = 0
-
-            if not remote.socket or self._retry_connect[name] >= \
-                    self.config.MAX_RECONNECT_RETRY_ON_SAME_SOCKET:
-                self._retry_connect.pop(name, None)
-                self.reconnectRemote(remote)
-            else:
-                self._retry_connect[name] += 1
-                self.sendPingPong(remote, is_ping=True)
-
-    def connectToMissing(self) -> set:
-        """
-        Try to connect to the missing nodes
-        """
-
-        missing = self.reconcileNodeReg()
-        if not missing:
-            return missing
-
-        logger.debug("{} found the following "
-                     "missing connections: {}"
-                     .format(self, ", ".join(missing)))
-
-        for name in missing:
-            try:
-                self.connect(name, ha=self.registry[name])
-            except ValueError as ex:
-                logger.error('{} cannot connect to {} due to {}'
-                             .format(self, name, ex))
-        return missing
-
-    async def service(self, limit=None):
-        c = await super().service(limit)
-        return c
