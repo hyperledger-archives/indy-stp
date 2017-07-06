@@ -26,6 +26,7 @@ def checkPortAvailable(ha):
     for typ in sockTypes:
         sock = socket.socket(socket.AF_INET, typ)
         try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.bind(ha)
             if typ == socket.SOCK_STREAM:
                 l_onoff = 1
